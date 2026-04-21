@@ -59,42 +59,42 @@ export function Layout() {
     <div className="min-h-svh bg-gradient-to-br from-green-50 via-blue-50 to-emerald-50">
       {/* Header */}
       <header className="bg-white/95 backdrop-blur border-b border-gray-200 shadow-sm sticky top-0 z-50">
-        <div className="px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="bg-gradient-to-br from-green-500 to-emerald-600 p-2 rounded-lg">
-                <Cloud className="w-6 h-6 text-white" />
+        <div className="px-3 xs:px-4 sm:px-6 lg:px-8 py-3 xs:py-4">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 xs:gap-3 min-w-0">
+              <div className="bg-gradient-to-br from-green-500 to-emerald-600 p-1.5 xs:p-2 rounded-lg flex-shrink-0">
+                <Cloud className="w-5 h-5 xs:w-6 xs:h-6 text-white" />
               </div>
               <div className="min-w-0">
-                <h1 className="font-bold text-green-800">AgroClima Alert</h1>
-                <p className="hidden sm:block text-sm text-gray-600">Sistema de Alertas Climáticas</p>
+                <h1 className="font-bold text-green-800 text-sm xs:text-base sm:text-lg truncate">AgroClima Alert</h1>
+                <p className="hidden sm:block text-xs text-gray-600 truncate">Sistema de Alertas Climáticas</p>
               </div>
             </div>
             
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-2 rounded-md hover:bg-gray-100"
+              className="lg:hidden p-2 rounded-md hover:bg-gray-100 flex-shrink-0"
               aria-label={mobileMenuOpen ? "Cerrar menú" : "Abrir menú"}
               aria-expanded={mobileMenuOpen}
             >
               {mobileMenuOpen ? (
-                <X className="w-6 h-6" />
+                <X className="w-5 h-5 xs:w-6 xs:h-6" />
               ) : (
-                <Menu className="w-6 h-6" />
+                <Menu className="w-5 h-5 xs:w-6 xs:h-6" />
               )}
             </button>
           </div>
         </div>
       </header>
 
-      <div className="flex">
+      <div className="flex min-h-[calc(100svh-60px)] xs:min-h-[calc(100svh-70px)]">
         {/* Sidebar - Desktop */}
         <aside
           className={`hidden lg:block bg-white/90 border-r border-gray-200 transition-all duration-300 ${
             sidebarCollapsed ? "w-20" : "w-72"
           }`}
         >
-          <div className="p-3 border-b border-gray-200 flex items-center justify-end">
+          <div className="p-2 xs:p-3 border-b border-gray-200 flex items-center justify-end">
             <button
               onClick={() => setSidebarCollapsed((prev) => !prev)}
               className="p-2 rounded-md hover:bg-gray-100 text-gray-700"
@@ -104,14 +104,14 @@ export function Layout() {
               {sidebarCollapsed ? <ChevronsRight className="w-5 h-5" /> : <ChevronsLeft className="w-5 h-5" />}
             </button>
           </div>
-          <nav className="p-4 space-y-1">
+          <nav className="p-2 xs:p-3 space-y-0.5">
             {navigation.map((item) => {
               const isActive = isRouteActive(item.href);
               return (
                 <Link
                   key={item.name}
                   to={item.href}
-                  className={`flex items-center px-4 py-3 rounded-lg transition-colors ${
+                  className={`flex items-center px-3 xs:px-4 py-2 xs:py-3 rounded-lg transition-colors text-sm ${
                     isActive
                       ? "bg-gradient-to-r from-green-500 to-emerald-600 text-white"
                       : "text-gray-700 hover:bg-gray-100"
@@ -119,7 +119,7 @@ export function Layout() {
                   }`}
                   title={sidebarCollapsed ? item.name : undefined}
                 >
-                  <item.icon className="w-5 h-5 shrink-0" />
+                  <item.icon className="w-5 h-5 flex-shrink-0" />
                   {!sidebarCollapsed && (
                     <span className="text-sm font-medium leading-snug">{item.name}</span>
                   )}
@@ -137,8 +137,8 @@ export function Layout() {
               className="absolute inset-0 bg-black/40"
               aria-label="Cerrar menú móvil"
             />
-            <div className="absolute top-0 right-0 h-full w-[85%] max-w-xs bg-white shadow-xl overflow-y-auto pt-20 px-4 pb-6">
-              <nav className="space-y-1">
+            <div className="absolute top-0 right-0 h-full w-[85%] max-w-xs bg-white shadow-xl overflow-y-auto pt-16 xs:pt-20 px-3 xs:px-4 pb-6">
+              <nav className="space-y-0.5">
                 {navigation.map((item) => {
                   const isActive = isRouteActive(item.href);
                   return (
@@ -146,7 +146,7 @@ export function Layout() {
                       key={item.name}
                       to={item.href}
                       onClick={() => setMobileMenuOpen(false)}
-                      className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                      className={`flex items-center gap-3 px-3 xs:px-4 py-2 xs:py-3 rounded-lg transition-colors text-sm ${
                         isActive
                           ? "bg-gradient-to-r from-green-500 to-emerald-600 text-white"
                           : "text-gray-700 hover:bg-gray-100"
