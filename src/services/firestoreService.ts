@@ -1,18 +1,45 @@
 import {
-  collection, doc, getDocs, addDoc, updateDoc,
+  collection, doc, getDoc, getDocs, addDoc, updateDoc,
   deleteDoc, setDoc, serverTimestamp, query, orderBy,
-  Timestamp,
+  Timestamp, where,
 } from "firebase/firestore";
 import { db } from "../firebase";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-/** Subcollection path: /{col}/{uid}/items */
+/** Subcollection path: /usuarios/{uid}/{name} */
 const col = (uid: string, name: string) =>
-  collection(db, name, uid, "items");
+  collection(db, "usuarios", uid, name);
 
 const docRef = (uid: string, name: string, id: string) =>
-  doc(db, name, uid, "items", id);
+  doc(db, "usuarios", uid, name, id);
+
+// ── Inicializar Perfil de Usuario ─────────────────────────────────────────
+
+export async function initializeUserProfile(
+  uid: string,
+  email: string,
+  rol: "administrador" | "operador" | "consultor" = "consultor"
+): Promise<void> {
+  try {
+    const ref = doc(db, "usuarios", uid, "usuarios_campo", uid);
+    const snap = await getDoc(ref);
+    // Solo crear si no existe para no sobreescribir datos editados manualmente
+    if (!snap.exists()) {
+      await setDoc(ref, {
+        nombre: email.split("@")[0],
+        correo: email,
+        telefono: "",
+        rol,
+        zona: "Centro",
+        estado: "Activo",
+        fecha_registro: new Date().toISOString(),
+      });
+    }
+  } catch (error) {
+    console.error("Error inicializando perfil de usuario:", error);
+  }
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -58,6 +85,17 @@ export interface UsuarioCampo {
 export interface NodoSensor {
   nombre: string;
   estado: string;
+}
+
+export interface Rele {
+  id: string;
+  nombre: string;
+  zona: string;
+  estado: "encendido" | "apagado";
+  modo: "manual" | "automatico";
+  cultivo_asociado: string;
+  descripcion: string;
+  ultima_activacion: string;
 }
 
 // ── Cultivos ───────────────────────────────────────────────────────────────
@@ -124,9 +162,15 @@ export async function deleteAlertasHistorialByCultivo(
   uid: string,
   cultivo: string
 ): Promise<void> {
-  const snap = await getDocs(col(uid, "alertas_historial"));
-  const batch = snap.docs.filter((d) => d.data().nombre_cultivo === cultivo);
-  await Promise.all(batch.map((d) => deleteDoc(d.ref)));
+  try {
+    const snap = await getDocs(col(uid, "alertas_historial"));
+    const batch = snap.docs.filter((d) => d.data().nombre_cultivo === cultivo);
+    if (batch.length > 0) {
+      await Promise.all(batch.map((d) => deleteDoc(d.ref)));
+    }
+  } catch (error) {
+    console.error(`Error eliminando historial para cultivo ${cultivo}:`, error);
+  }
 }
 
 // ── Usuarios de campo ─────────────────────────────────────────────────────
@@ -154,6 +198,47 @@ export async function deleteUsuarioCampo(uid: string, id: string): Promise<void>
 
 // ── Nodos / Sensores ───────────────────────────────────────────────────────
 
+// ── Relés ──────────────────────────────────────────────────────────────────
+
+export async function getReles(uid: string): Promise<Rele[]> {
+  const snap = await getDocs(query(col(uid, "reles"), orderBy("ultima_activacion", "desc")));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Rele));
+}
+
+export async function saveRele(uid: string, data: Omit<Rele, "id">, id?: string): Promise<void> {
+  if (id) {
+    await updateDoc(docRef(uid, "reles", id), { ...data });
+  } else {
+    await addDoc(col(uid, "reles"), { ...data });
+  }
+}
+
+export async function deleteRele(uid: string, id: string): Promise<void> {
+  await deleteDoc(docRef(uid, "reles", id));
+}
+
+export async function toggleReleEstado(uid: string, id: string, nuevoEstado: "encendido" | "apagado"): Promise<void> {
+  await updateDoc(docRef(uid, "reles", id), {
+    estado: nuevoEstado,
+    ultima_activacion: new Date().toISOString(),
+  });
+}
+
+// ── Nodos / Sensores ───────────────────────────────────────────────────────
+
+export async function getNodos(uid: string): Promise<NodoSensor[]> {
+  try {
+    const snap = await getDocs(col(uid, "nodos"));
+    return snap.docs.map((d) => ({ ...d.data() } as NodoSensor));
+  } catch (error) {
+    console.error("Error obteniendo nodos:", error);
+    return [];
+  }
+}
+
 export async function saveNodos(uid: string, sensores: NodoSensor[]): Promise<void> {
-  await setDoc(doc(db, "nodos", uid), { sensores, updatedAt: serverTimestamp() });
+  await setDoc(doc(db, "usuarios", uid, "nodos_config", "main"), { 
+    sensores, 
+    updatedAt: serverTimestamp() 
+  });
 }
