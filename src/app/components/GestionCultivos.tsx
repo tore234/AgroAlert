@@ -2,17 +2,28 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Sprout, Plus, MapPin, Calendar, TrendingUp, Edit,
   Trash2, Search, CheckCircle2, Leaf, BarChart3, LocateFixed, Loader2,
+  User, ShieldCheck,
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import Swal from "sweetalert2";
-import { useAuth } from "../../hooks/useAuth";
+import { useCurrentUser } from "../../hooks/useCurrentUser";
 import {
-  getCultivos, saveCultivo, deleteCultivo, Cultivo,
+  getCultivosGlobal, saveCultivoGlobal, deleteCultivoGlobal, Cultivo,
 } from "../../services/firestoreService";
 
+const ROL_COLOR: Record<string, string> = {
+  administrador: "bg-purple-100 text-purple-700",
+  operador:      "bg-blue-100 text-blue-700",
+  consultor:     "bg-emerald-100 text-emerald-700",
+};
+
 export function GestionCultivos() {
-  const { uid } = useAuth();
+  const { uid, nombre, rol } = useCurrentUser();
+
+  const puedeEscribir = rol === "administrador" || rol === "operador";
+  const puedeEliminar = rol === "administrador";
+
   const [cultivos, setCultivos] = useState<Cultivo[]>([]);
   const [cargando, setCargando] = useState(true);
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
@@ -28,10 +39,9 @@ export function GestionCultivos() {
   const [buscandoUbicacion, setBuscandoUbicacion] = useState(false);
 
   const cargarDatos = async () => {
-    if (!uid) return;
     setCargando(true);
     try {
-      setCultivos(await getCultivos(uid));
+      setCultivos(await getCultivosGlobal());
     } catch {
       Swal.fire("Error", "No se pudieron sincronizar los datos", "error");
     } finally {
@@ -39,7 +49,7 @@ export function GestionCultivos() {
     }
   };
 
-  useEffect(() => { cargarDatos(); }, [uid]);
+  useEffect(() => { cargarDatos(); }, []);
 
   const limpiarFormulario = () => {
     setFormulario({ nombre: "", zona: "", hectareas: 0, fechaSiembra: "", estado: "activo", lat: "", lng: "" });
@@ -79,13 +89,14 @@ export function GestionCultivos() {
       return;
     }
     try {
-      await saveCultivo(uid, {
-        nombre: formulario.nombre,
-        zona: formulario.zona,
-        hectareas: formulario.hectareas,
+      await saveCultivoGlobal({
+        nombre:       formulario.nombre,
+        zona:         formulario.zona,
+        hectareas:    formulario.hectareas,
         fechaSiembra: formulario.fechaSiembra,
-        estado: formulario.estado,
-        coordenadas: { lat, lng },
+        estado:       formulario.estado,
+        coordenadas:  { lat, lng },
+        creado_por:   nombre,
       }, cultivoEditando ?? undefined);
 
       Swal.fire({ icon: "success", title: cultivoEditando ? "Registro Actualizado" : "Cultivo Registrado",
@@ -104,9 +115,9 @@ export function GestionCultivos() {
       confirmButtonColor: "#ef4444", cancelButtonColor: "#6b7280",
       confirmButtonText: "Sí, eliminar", cancelButtonText: "Cancelar",
     });
-    if (!result.isConfirmed || !uid) return;
+    if (!result.isConfirmed) return;
     try {
-      await deleteCultivo(uid, id);
+      await deleteCultivoGlobal(id);
       Swal.fire("¡Eliminado!", "Cultivo removido correctamente.", "success");
       await cargarDatos();
     } catch { Swal.fire("Error", "No se pudo procesar la eliminación.", "error"); }
@@ -134,9 +145,7 @@ export function GestionCultivos() {
   if (!uid) {
     return (
       <div className="min-h-screen bg-gray-50/50 dark:bg-slate-900 p-4 md:p-8 flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <p className="text-gray-500 dark:text-gray-400 font-bold">Por favor inicia sesión para ver tus cultivos</p>
-        </div>
+        <p className="text-gray-500 dark:text-gray-400 font-bold">Por favor inicia sesión</p>
       </div>
     );
   }
@@ -151,10 +160,22 @@ export function GestionCultivos() {
             <Leaf className="w-8 h-8 text-white" />
           </div>
           <div>
-            <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">AgroAlert</h1>
-            <p className="text-gray-500 dark:text-gray-400 font-medium flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-green-500" /> Gestión de Cultivos
-            </p>
+            <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">Gestión de Cultivos</h1>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <span className="flex items-center gap-1 text-gray-500 dark:text-gray-400 text-sm font-medium">
+                <User className="w-3.5 h-3.5" /> {nombre}
+              </span>
+              {rol && (
+                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${ROL_COLOR[rol] ?? ""}`}>
+                  {rol}
+                </span>
+              )}
+              {!puedeEscribir && (
+                <span className="flex items-center gap-1 text-[10px] text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded-full">
+                  <ShieldCheck className="w-3 h-3" /> Solo lectura
+                </span>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -168,10 +189,12 @@ export function GestionCultivos() {
             <option value="Todas">Todas las Zonas</option>
             {["Norte","Sur","Este","Oeste","Centro"].map((z) => <option key={z} value={z}>Zona {z}</option>)}
           </select>
-          <button onClick={() => { limpiarFormulario(); setMostrarFormulario(!mostrarFormulario); }}
-            className="flex items-center justify-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold shadow-md shadow-green-100 transition-all active:scale-95">
-            <Plus className="w-5 h-5" /> {mostrarFormulario ? "Cerrar" : "Nuevo Registro"}
-          </button>
+          {puedeEscribir && (
+            <button onClick={() => { limpiarFormulario(); setMostrarFormulario(!mostrarFormulario); }}
+              className="flex items-center justify-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold shadow-md shadow-green-100 transition-all active:scale-95">
+              <Plus className="w-5 h-5" /> {mostrarFormulario ? "Cerrar" : "Nuevo Registro"}
+            </button>
+          )}
         </div>
       </header>
 
@@ -378,17 +401,24 @@ export function GestionCultivos() {
                         </td>
                         <td className="px-6 py-5 text-right">
                           <div className="flex justify-end gap-2">
-                            <button onClick={() => {
-                              setFormulario({ nombre: c.nombre, zona: c.zona, hectareas: c.hectareas, fechaSiembra: c.fechaSiembra, estado: c.estado, lat: String(c.coordenadas.lat), lng: String(c.coordenadas.lng) });
-                              setCultivoEditando(c.id); setMostrarFormulario(true);
-                              window.scrollTo({ top: 0, behavior: "smooth" });
-                            }} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors">
-                              <Edit className="w-5 h-5" />
-                            </button>
-                            <button onClick={() => confirmarEliminar(c.id)}
-                              className="p-2 text-red-500 hover:bg-red-100 rounded-lg transition-colors">
-                              <Trash2 className="w-5 h-5" />
-                            </button>
+                            {puedeEscribir && (
+                              <button onClick={() => {
+                                setFormulario({ nombre: c.nombre, zona: c.zona, hectareas: c.hectareas, fechaSiembra: c.fechaSiembra, estado: c.estado, lat: String(c.coordenadas.lat), lng: String(c.coordenadas.lng) });
+                                setCultivoEditando(c.id); setMostrarFormulario(true);
+                                window.scrollTo({ top: 0, behavior: "smooth" });
+                              }} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors">
+                                <Edit className="w-5 h-5" />
+                              </button>
+                            )}
+                            {puedeEliminar && (
+                              <button onClick={() => confirmarEliminar(c.id)}
+                                className="p-2 text-red-500 hover:bg-red-100 rounded-lg transition-colors">
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            )}
+                            {!puedeEscribir && (
+                              <span className="text-xs text-gray-300 italic px-2">Sin permisos</span>
+                            )}
                           </div>
                         </td>
                       </tr>

@@ -1,14 +1,15 @@
-import { Bell, Plus, Settings, AlertTriangle } from "lucide-react";
-import { cultivos } from "../data/mockData";
+import { Plus, Settings, AlertTriangle, User, ShieldCheck } from "lucide-react";
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import Swal from "sweetalert2";
-import { useAuth } from "../../hooks/useAuth";
+import { useCurrentUser } from "../../hooks/useCurrentUser";
 import {
-  getAlertasConfig, saveAlertaConfig, deleteAlertaConfig,
-  getAlertasHistorial, addAlertaHistorial, deleteAlertasHistorialByCultivo,
-  ConfigAlerta, AlertaHistorial,
+  getAlertasConfigGlobal, saveAlertaConfigGlobal, deleteAlertaConfigGlobal,
+  getAlertasHistorialGlobal, addAlertaHistorialGlobal,
+  deleteAlertasHistorialGlobalByCultivo,
+  getCultivosGlobal,
+  ConfigAlerta, AlertaHistorial, Cultivo,
 } from "../../services/firestoreService";
 
 const tipoIcons: Record<string, string> = {
@@ -23,29 +24,39 @@ const coloresPastel: Record<string, string> = {
 };
 const BLANK = { cultivo: "", zona: "", tipoAlerta: [] as string[], umbralTemp: 5, umbralLluvia: 50 };
 
+const ROL_COLOR: Record<string, string> = {
+  administrador: "bg-purple-100 text-purple-700",
+  operador:      "bg-blue-100 text-blue-700",
+  consultor:     "bg-emerald-100 text-emerald-700",
+};
+
 export function AlertasPersonalizadas() {
-  const { uid } = useAuth();
+  const { nombre, rol } = useCurrentUser();
+  const puedeEscribir = rol === "administrador" || rol === "operador";
+
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [historial, setHistorial] = useState<AlertaHistorial[]>([]);
   const [configuraciones, setConfiguraciones] = useState<ConfigAlerta[]>([]);
+  const [cultivosLista, setCultivosLista] = useState<Cultivo[]>([]);
   const [nueva, setNueva] = useState({ ...BLANK });
 
   const cargar = async () => {
-    if (!uid) return;
-    const [configs, hist] = await Promise.all([
-      getAlertasConfig(uid), getAlertasHistorial(uid),
+    const [configs, hist, cvs] = await Promise.all([
+      getAlertasConfigGlobal(),
+      getAlertasHistorialGlobal(),
+      getCultivosGlobal(),
     ]);
     setConfiguraciones(configs);
     setHistorial(hist);
+    setCultivosLista(cvs);
   };
 
-  useEffect(() => { cargar(); }, [uid]);
+  useEffect(() => { cargar(); }, []);
   useEffect(() => {
-    if (!uid) return;
-    const t = setInterval(() => getAlertasHistorial(uid).then(setHistorial), 30_000);
+    const t = setInterval(() => getAlertasHistorialGlobal().then(setHistorial), 30_000);
     return () => clearInterval(t);
-  }, [uid]);
+  }, []);
 
   const cancelar = () => { setMostrarFormulario(false); setEditandoId(null); setNueva({ ...BLANK }); };
 
@@ -57,21 +68,22 @@ export function AlertasPersonalizadas() {
   };
 
   const guardar = async () => {
-    if (!uid || !nueva.cultivo || !nueva.zona || nueva.tipoAlerta.length === 0) {
+    if (!nueva.cultivo || !nueva.zona || nueva.tipoAlerta.length === 0) {
       Swal.fire("Campos incompletos", "Llena todos los datos", "warning"); return;
     }
     try {
-      await saveAlertaConfig(uid, nueva, editandoId ?? undefined);
+      await saveAlertaConfigGlobal(nueva, editandoId ?? undefined);
       if (!editandoId) {
-        await addAlertaHistorial(uid, {
+        await addAlertaHistorialGlobal({
           nombre_cultivo: nueva.cultivo,
-          tipo_evento: nueva.tipoAlerta[0],
-          zona: nueva.zona,
-          valor_clima: nueva.tipoAlerta[0] === "lluvia" ? nueva.umbralLluvia : nueva.umbralTemp,
+          tipo_evento:    nueva.tipoAlerta[0],
+          zona:           nueva.zona,
+          valor_clima:    nueva.tipoAlerta[0] === "lluvia" ? nueva.umbralLluvia : nueva.umbralTemp,
           fecha_deteccion: new Date().toISOString(),
         });
       }
-      Swal.fire({ title: editandoId ? "¡Actualizado!" : "¡Guardado!", text: "Cambios guardados en AgroAlert", icon: "success", confirmButtonColor: "#77dd77", timer: 2000 });
+      Swal.fire({ title: editandoId ? "¡Actualizado!" : "¡Guardado!", icon: "success",
+        confirmButtonColor: "#77dd77", timer: 2000 });
       await cargar();
       cancelar();
     } catch {
@@ -81,14 +93,17 @@ export function AlertasPersonalizadas() {
 
   const eliminar = async (id: string, cultivo: string) => {
     const confirm = await Swal.fire({
-      title: "¿Estás segura?", text: `Se eliminará la configuración de ${cultivo}`,
+      title: "¿Estás seguro?", text: `Se eliminará la configuración de ${cultivo}`,
       icon: "warning", showCancelButton: true,
       confirmButtonColor: "#d33", cancelButtonColor: "#3085d6",
       confirmButtonText: "Sí, eliminar", cancelButtonText: "Cancelar",
     });
-    if (!confirm.isConfirmed || !uid) return;
+    if (!confirm.isConfirmed) return;
     try {
-      await Promise.all([deleteAlertaConfig(uid, id), deleteAlertasHistorialByCultivo(uid, cultivo)]);
+      await Promise.all([
+        deleteAlertaConfigGlobal(id),
+        deleteAlertasHistorialGlobalByCultivo(cultivo),
+      ]);
       Swal.fire("Eliminado", "Configuración borrada.", "success");
       await cargar();
     } catch { Swal.fire("Error", "No se pudo eliminar.", "error"); }
@@ -99,9 +114,23 @@ export function AlertasPersonalizadas() {
       <div className="flex flex-col xs:flex-row xs:items-center xs:justify-between gap-2 xs:gap-4">
         <div className="min-w-0">
           <h1 className="font-bold text-lg xs:text-xl sm:text-2xl text-gray-900 dark:text-white uppercase tracking-tight truncate">Alertas Personalizadas</h1>
-          <p className="text-gray-600 dark:text-gray-400 text-xs xs:text-sm truncate">Monitoreo en tiempo real · AgroAlert</p>
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+            <span className="flex items-center gap-1 text-gray-500 dark:text-gray-400 text-xs font-medium">
+              <User className="w-3 h-3" /> {nombre}
+            </span>
+            {rol && (
+              <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${ROL_COLOR[rol] ?? ""}`}>
+                {rol}
+              </span>
+            )}
+            {!puedeEscribir && (
+              <span className="flex items-center gap-1 text-[9px] text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded-full">
+                <ShieldCheck className="w-3 h-3" /> Solo lectura
+              </span>
+            )}
+          </div>
         </div>
-        {!mostrarFormulario && (
+        {!mostrarFormulario && puedeEscribir && (
           <button onClick={() => setMostrarFormulario(true)}
             className="w-full xs:w-auto flex items-center justify-center gap-2 px-4 xs:px-6 py-2 xs:py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg xs:rounded-xl hover:from-green-600 hover:to-emerald-700 transition-all shadow-md font-bold uppercase text-xs xs:text-sm flex-shrink-0">
             <Plus className="w-4 h-4 xs:w-5 xs:h-5" />
@@ -119,7 +148,7 @@ export function AlertasPersonalizadas() {
               <select value={nueva.cultivo} onChange={(e) => setNueva({ ...nueva, cultivo: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:ring-2 focus:ring-green-500 outline-none font-medium">
                 <option value="">Seleccionar cultivo</option>
-                {cultivos.map((c) => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                {cultivosLista.map((c) => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
               </select>
             </div>
             <div>

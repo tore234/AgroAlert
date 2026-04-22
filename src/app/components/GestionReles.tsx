@@ -1,21 +1,69 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   Zap, Plus, MapPin, Edit, Trash2, Search, Power,
-  Activity, Settings, Clock, Cpu,
+  Activity, Settings, Clock, Cpu, User, ShieldCheck, X, Check,
 } from "lucide-react";
+import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import L from "leaflet";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import Swal from "sweetalert2";
-import { useAuth } from "../../hooks/useAuth";
+import { useCurrentUser } from "../../hooks/useCurrentUser";
 import {
-  getReles, saveRele, deleteRele, toggleReleEstado,
-  getCultivos, Rele, Cultivo,
+  getRelesGlobal, saveReleGlobal, deleteReleGlobal, toggleReleGlobal,
+  getCultivosGlobal, Rele, Cultivo,
 } from "../../services/firestoreService";
 
 const ZONAS = ["Norte", "Sur", "Este", "Oeste", "Centro"];
 
+const ROL_COLOR: Record<string, string> = {
+  administrador: "bg-purple-100 text-purple-700",
+  operador:      "bg-blue-100 text-blue-700",
+  consultor:     "bg-emerald-100 text-emerald-700",
+};
+
+// ── Mini Map for selecting relay location ─────────────────────────────────
+
+function MapaSelectorUbicacion({ 
+  coordenadas, 
+  onChange 
+}: { 
+  coordenadas: { lat: number; lng: number }; 
+  onChange: (coords: { lat: number; lng: number }) => void;
+}) {
+  const MapClick = () => {
+    useMapEvents({
+      click(e) {
+        onChange({ lat: e.latlng.lat, lng: e.latlng.lng });
+      },
+    });
+    return null;
+  };
+
+  return (
+    <div className="w-full rounded-xl overflow-hidden border border-gray-200 dark:border-slate-600 h-64 shadow-md">
+      <MapContainer
+        center={[coordenadas.lat, coordenadas.lng]}
+        zoom={13}
+        style={{ width: "100%", height: "100%" }}
+      >
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution="© OpenStreetMap"
+        />
+        <Marker position={[coordenadas.lat, coordenadas.lng]} />
+        <MapClick />
+      </MapContainer>
+    </div>
+  );
+}
+
 export function GestionReles() {
-  const { uid } = useAuth();
+  const { uid, nombre, rol } = useCurrentUser();
+
+  const puedeEscribir = rol === "administrador" || rol === "operador";
+  const puedeEliminar = rol === "administrador";
+
   const [reles, setReles] = useState<Rele[]>([]);
   const [cultivos, setCultivos] = useState<Cultivo[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -31,13 +79,13 @@ export function GestionReles() {
     modo: "manual" as Rele["modo"],
     cultivo_asociado: "Ninguno",
     descripcion: "",
+    coordenadas: { lat: 20.45, lng: -100.3 },
   });
 
   const cargarDatos = async () => {
-    if (!uid) return;
     setCargando(true);
     try {
-      const [r, c] = await Promise.all([getReles(uid), getCultivos(uid)]);
+      const [r, c] = await Promise.all([getRelesGlobal(), getCultivosGlobal()]);
       setReles(r);
       setCultivos(c);
     } catch {
@@ -47,10 +95,10 @@ export function GestionReles() {
     }
   };
 
-  useEffect(() => { cargarDatos(); }, [uid]);
+  useEffect(() => { cargarDatos(); }, []);
 
   const limpiarFormulario = () => {
-    setFormulario({ nombre: "", zona: "", estado: "apagado", modo: "manual", cultivo_asociado: "Ninguno", descripcion: "" });
+    setFormulario({ nombre: "", zona: "", estado: "apagado", modo: "manual", cultivo_asociado: "Ninguno", descripcion: "", coordenadas: { lat: 20.45, lng: -100.3 } });
     setReleEditando(null);
     setMostrarFormulario(false);
   };
@@ -62,9 +110,10 @@ export function GestionReles() {
       return;
     }
     try {
-      await saveRele(uid, {
+      await saveReleGlobal({
         ...formulario,
         ultima_activacion: new Date().toISOString(),
+        creado_por: nombre,
       }, releEditando ?? undefined);
 
       Swal.fire({ icon: "success", title: releEditando ? "Relé Actualizado" : "Relé Registrado",
@@ -83,9 +132,9 @@ export function GestionReles() {
       confirmButtonColor: "#ef4444", cancelButtonColor: "#6b7280",
       confirmButtonText: "Sí, eliminar", cancelButtonText: "Cancelar",
     });
-    if (!result.isConfirmed || !uid) return;
+    if (!result.isConfirmed) return;
     try {
-      await deleteRele(uid, id);
+      await deleteReleGlobal(id);
       Swal.fire({ icon: "success", title: "Eliminado", showConfirmButton: false, timer: 1500 });
       await cargarDatos();
     } catch {
@@ -94,10 +143,10 @@ export function GestionReles() {
   };
 
   const manejarToggle = async (rele: Rele) => {
-    if (!uid) return;
+    if (!puedeEscribir) return;
     const nuevoEstado = rele.estado === "encendido" ? "apagado" : "encendido";
     try {
-      await toggleReleEstado(uid, rele.id, nuevoEstado);
+      await toggleReleGlobal(rele.id, nuevoEstado);
       setReles((prev) => prev.map((r) =>
         r.id === rele.id ? { ...r, estado: nuevoEstado, ultima_activacion: new Date().toISOString() } : r
       ));
@@ -107,10 +156,10 @@ export function GestionReles() {
   };
 
   const manejarModo = async (rele: Rele) => {
-    if (!uid) return;
+    if (!puedeEscribir) return;
     const nuevoModo: Rele["modo"] = rele.modo === "manual" ? "automatico" : "manual";
     try {
-      await saveRele(uid, { ...rele, modo: nuevoModo }, rele.id);
+      await saveReleGlobal({ ...rele, modo: nuevoModo }, rele.id);
       setReles((prev) => prev.map((r) =>
         r.id === rele.id ? { ...r, modo: nuevoModo } : r
       ));
@@ -142,7 +191,7 @@ export function GestionReles() {
   if (!uid) {
     return (
       <div className="min-h-screen bg-gray-50/50 dark:bg-slate-900 p-8 flex items-center justify-center">
-        <p className="text-gray-500 dark:text-gray-400 font-bold">Por favor inicia sesión para ver los relés</p>
+        <p className="text-gray-500 dark:text-gray-400 font-bold">Por favor inicia sesión</p>
       </div>
     );
   }
@@ -157,10 +206,22 @@ export function GestionReles() {
             <Zap className="w-8 h-8 text-white" />
           </div>
           <div>
-            <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">AgroAlert</h1>
-            <p className="text-gray-500 dark:text-gray-400 font-medium flex items-center gap-2">
-              <Activity className="w-4 h-4 text-amber-500" /> Control de Relés
-            </p>
+            <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight">Control de Relés</h1>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <span className="flex items-center gap-1 text-gray-500 dark:text-gray-400 text-sm font-medium">
+                <User className="w-3.5 h-3.5" /> {nombre}
+              </span>
+              {rol && (
+                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${ROL_COLOR[rol] ?? ""}`}>
+                  {rol}
+                </span>
+              )}
+              {!puedeEscribir && (
+                <span className="flex items-center gap-1 text-[10px] text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded-full">
+                  <ShieldCheck className="w-3 h-3" /> Solo lectura
+                </span>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -182,12 +243,14 @@ export function GestionReles() {
             <option value="Todas">Todas las Zonas</option>
             {ZONAS.map((z) => <option key={z} value={z}>Zona {z}</option>)}
           </select>
-          <button
-            onClick={() => { limpiarFormulario(); setMostrarFormulario(!mostrarFormulario); }}
-            className="flex items-center justify-center gap-2 px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold shadow-md shadow-amber-100 dark:shadow-amber-900/20 transition-all active:scale-95"
-          >
-            <Plus className="w-5 h-5" /> {mostrarFormulario ? "Cerrar" : "Nuevo Relé"}
-          </button>
+          {puedeEscribir && (
+            <button
+              onClick={() => { limpiarFormulario(); setMostrarFormulario(!mostrarFormulario); }}
+              className="flex items-center justify-center gap-2 px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold shadow-md shadow-amber-100 dark:shadow-amber-900/20 transition-all active:scale-95"
+            >
+              <Plus className="w-5 h-5" /> {mostrarFormulario ? "Cerrar" : "Nuevo Relé"}
+            </button>
+          )}
         </div>
       </header>
 
@@ -262,6 +325,18 @@ export function GestionReles() {
                 value={formulario.descripcion}
                 onChange={(e) => setFormulario({ ...formulario, descripcion: e.target.value })}
                 className="w-full px-4 py-3 bg-gray-50 dark:bg-slate-700 dark:text-white border border-gray-200 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none transition-all"
+              />
+            </div>
+
+            <div className="space-y-2 md:col-span-3">
+              <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                <MapPin className="w-4 h-4" />
+                Ubicación del Relé (Lat: {formulario.coordenadas.lat.toFixed(4)}, Lng: {formulario.coordenadas.lng.toFixed(4)})
+              </label>
+              <p className="text-xs text-gray-500 italic">Haz click en el mapa para seleccionar la ubicación</p>
+              <MapaSelectorUbicacion 
+                coordenadas={formulario.coordenadas}
+                onChange={(coords) => setFormulario({ ...formulario, coordenadas: coords })}
               />
             </div>
 
@@ -362,7 +437,8 @@ export function GestionReles() {
                         {/* Power toggle switch */}
                         <button
                           onClick={() => manejarToggle(rele)}
-                          title={rele.estado === "encendido" ? "Apagar" : "Encender"}
+                          disabled={!puedeEscribir}
+                          title={!puedeEscribir ? "Sin permisos" : rele.estado === "encendido" ? "Apagar" : "Encender"}
                           className={`flex-shrink-0 relative w-14 h-7 rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-1 ${
                             rele.estado === "encendido"
                               ? "bg-emerald-500 focus:ring-emerald-400"
@@ -421,28 +497,33 @@ export function GestionReles() {
 
                         {/* Actions */}
                         <div className="flex gap-1">
-                          <button
-                            onClick={() => {
-                              setFormulario({
-                                nombre: rele.nombre, zona: rele.zona,
-                                estado: rele.estado, modo: rele.modo,
-                                cultivo_asociado: rele.cultivo_asociado,
-                                descripcion: rele.descripcion,
-                              });
-                              setReleEditando(rele.id);
-                              setMostrarFormulario(true);
-                              window.scrollTo({ top: 0, behavior: "smooth" });
-                            }}
-                            className="p-1.5 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => confirmarEliminar(rele.id)}
-                            className="p-1.5 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {puedeEscribir && (
+                            <button
+                              onClick={() => {
+                                setFormulario({
+                                  nombre: rele.nombre, zona: rele.zona,
+                                  estado: rele.estado, modo: rele.modo,
+                                  cultivo_asociado: rele.cultivo_asociado,
+                                  descripcion: rele.descripcion,
+                                  coordenadas: rele.coordenadas || { lat: 20.45, lng: -100.3 },
+                                });
+                                setReleEditando(rele.id);
+                                setMostrarFormulario(true);
+                                window.scrollTo({ top: 0, behavior: "smooth" });
+                              }}
+                              className="p-1.5 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                          )}
+                          {puedeEliminar && (
+                            <button
+                              onClick={() => confirmarEliminar(rele.id)}
+                              className="p-1.5 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </div>
 

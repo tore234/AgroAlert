@@ -5,11 +5,10 @@ import {
 import L from "leaflet";
 import {
   MapPin, Thermometer, Droplets, Wind, AlertTriangle,
-  Layers, TreePine, RefreshCw, Navigation, Satellite, Map, LocateFixed,
+  Layers, TreePine, RefreshCw, Navigation, Satellite, Map, LocateFixed, Zap,
 } from "lucide-react";
-import { useAuth } from "../../hooks/useAuth";
 import {
-  getCultivos, getAlertasHistorial, Cultivo, AlertaHistorial,
+  getCultivosGlobal, getAlertasHistorialGlobal, getRelesGlobal, Cultivo, AlertaHistorial, Rele,
 } from "../../services/firestoreService";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -130,6 +129,23 @@ function alertaIcon() {
   });
 }
 
+function releIcon(estado: string) {
+  const color = estado === "encendido" ? "#22c55e" : "#94a3b8";
+  return L.divIcon({
+    className: "",
+    html: `<div style="
+      width:32px;height:32px;border-radius:4px;
+      background:${color};border:3px solid white;
+      box-shadow:0 2px 8px rgba(0,0,0,0.35);
+      display:flex;align-items:center;justify-content:center;
+      font-size:18px;
+    ">⚡</div>`,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -20],
+  });
+}
+
 // ── Map fly-to controller ─────────────────────────────────────────────────────
 
 function FlyTo({ target }: { target: { lat: number; lng: number; zoom: number } | null }) {
@@ -144,48 +160,56 @@ function FlyTo({ target }: { target: { lat: number; lng: number; zoom: number } 
 
 type GeoPos = { lat: number; lng: number; accuracy: number } | null;
 
-function useRealTimeLocation(): GeoPos {
-  const [pos, setPos] = useState<GeoPos>(null);
+function useRealTimeLocation(): { pos: GeoPos; geoError: string | null } {
+  const [pos,      setPos]      = useState<GeoPos>(null);
+  const [geoError, setGeoError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      setGeoError("Geolocalización no disponible en este navegador");
+      return;
+    }
     const id = navigator.geolocation.watchPosition(
-      ({ coords }) => setPos({ lat: coords.latitude, lng: coords.longitude, accuracy: coords.accuracy }),
-      () => {},
-      { enableHighAccuracy: true, maximumAge: 5000 },
+      ({ coords }) => {
+        setPos({ lat: coords.latitude, lng: coords.longitude, accuracy: coords.accuracy });
+        setGeoError(null);
+      },
+      (err) => setGeoError(
+        err.code === 1 ? "Permiso de ubicación denegado" : "No se pudo obtener la ubicación"
+      ),
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
     );
     return () => navigator.geolocation.clearWatch(id);
   }, []);
 
-  return pos;
+  return { pos, geoError };
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export function MapasVisualizacion() {
-  const { uid } = useAuth();
-
   const [cultivos,  setCultivos]  = useState<Cultivo[]>([]);
   const [alertas,   setAlertas]   = useState<AlertaHistorial[]>([]);
+  const [reles,     setReles]     = useState<Rele[]>([]);
   const [cargando,  setCargando]  = useState(true);
   const [tileKey,   setTileKey]   = useState<TileKey>("calles");
   const [capaClima, setCapaClima] = useState<CapaKey>("ninguna");
   const [zonaFiltro, setZonaFiltro] = useState("Todas");
   const [flyTarget, setFlyTarget] = useState<{ lat: number; lng: number; zoom: number } | null>(null);
 
-  const miUbicacion = useRealTimeLocation();
+  const { pos: miUbicacion, geoError } = useRealTimeLocation();
 
   const cargarDatos = useCallback(async () => {
-    if (!uid) return;
     setCargando(true);
     try {
-      const [c, a] = await Promise.all([getCultivos(uid), getAlertasHistorial(uid)]);
+      const [c, a, r] = await Promise.all([getCultivosGlobal(), getAlertasHistorialGlobal(), getRelesGlobal()]);
       setCultivos(c);
       setAlertas(a);
+      setReles(r);
     } finally {
       setCargando(false);
     }
-  }, [uid]);
+  }, []);
 
   useEffect(() => { cargarDatos(); }, [cargarDatos]);
 
@@ -221,62 +245,67 @@ export function MapasVisualizacion() {
     <div className="min-h-screen bg-gray-50/50 dark:bg-slate-900 p-4 md:p-8 space-y-6">
 
       {/* Header */}
-      <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4
-                         bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm
+      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4
+                         bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-2xl shadow-sm
                          border border-gray-100 dark:border-slate-700">
-        <div className="flex items-center gap-4">
-          <div className="bg-emerald-500 p-3 rounded-xl shadow-lg shadow-emerald-200 dark:shadow-emerald-900/30">
-            <MapPin className="w-7 h-7 text-white" />
+        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+          <div className="bg-emerald-500 p-2 sm:p-3 rounded-xl shadow-lg shadow-emerald-200 dark:shadow-emerald-900/30 flex-shrink-0">
+            <MapPin className="w-5 sm:w-7 h-5 sm:h-7 text-white" />
           </div>
-          <div>
-            <h1 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">AgroAlert</h1>
-            <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">Mapas y Visualización en Tiempo Real</p>
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white tracking-tight truncate">AgroAlert</h1>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 font-medium truncate">Mapas y Visualización en Tiempo Real</p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 sm:gap-3">
           <select
             value={zonaFiltro}
             onChange={(e) => setZonaFiltro(e.target.value)}
-            className="px-4 py-2 bg-gray-100 dark:bg-slate-700 dark:text-white rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-500"
+            className="px-3 sm:px-4 py-2 bg-gray-100 dark:bg-slate-700 dark:text-white rounded-xl text-xs sm:text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-500"
           >
-            <option value="Todas">Todas las zonas</option>
-            {zonas.map((z) => <option key={z} value={z}>Zona {z}</option>)}
+            <option value="Todas">Todas</option>
+            {zonas.map((z) => <option key={z} value={z}>{z}</option>)}
           </select>
-          {miUbicacion && (
+          {miUbicacion ? (
             <button
               onClick={() => setFlyTarget({ lat: miUbicacion.lat, lng: miUbicacion.lng, zoom: 15 })}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-sm font-bold transition-all active:scale-95"
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-xs sm:text-sm font-bold transition-all active:scale-95 flex-shrink-0"
             >
-              <LocateFixed className="w-4 h-4" />
-              Mi ubicación
+              <LocateFixed className="w-4 h-4 flex-shrink-0" />
+              <span className="hidden sm:inline">Mi ubicación</span>
             </button>
-          )}
+          ) : geoError ? (
+            <span className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-amber-50 border border-amber-200 text-amber-600 rounded-xl text-xs font-bold flex-shrink-0">
+              <LocateFixed className="w-4 h-4 flex-shrink-0" />
+              <span className="hidden sm:inline">{geoError}</span>
+            </span>
+          ) : null}
           <button
             onClick={cargarDatos}
             disabled={cargando}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-sm font-bold transition-all active:scale-95 disabled:opacity-60"
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs sm:text-sm font-bold transition-all active:scale-95 disabled:opacity-60 flex-shrink-0"
           >
-            <RefreshCw className={`w-4 h-4 ${cargando ? "animate-spin" : ""}`} />
-            Actualizar
+            <RefreshCw className={`w-4 h-4 flex-shrink-0 ${cargando ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline">Actualizar</span>
           </button>
         </div>
       </header>
 
       {/* Stats bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
         {[
           { label: "Cultivos",  val: cultivos.length,  color: "bg-emerald-500", Icon: TreePine },
           { label: "Alertas",   val: alertas.length,   color: "bg-red-500",     Icon: AlertTriangle },
           { label: "Zonas",     val: zonas.length,     color: "bg-blue-500",    Icon: MapPin },
           { label: "Hectáreas", val: `${cultivos.reduce((s, c) => s + c.hectareas, 0)} ha`, color: "bg-amber-500", Icon: Layers },
         ].map(({ label, val, color, Icon }) => (
-          <div key={label} className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-gray-100 dark:border-slate-700 flex items-center gap-3">
-            <div className={`${color} p-2 rounded-xl`}>
+          <div key={label} className="bg-white dark:bg-slate-800 rounded-2xl p-3 md:p-4 border border-gray-100 dark:border-slate-700 flex items-center gap-2 md:gap-3">
+            <div className={`${color} p-2 rounded-xl flex-shrink-0`}>
               <Icon className="w-4 h-4 text-white" />
             </div>
-            <div>
-              <p className="text-xl font-black text-gray-900 dark:text-white leading-none">{val}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wider">{label}</p>
+            <div className="min-w-0">
+              <p className="text-lg md:text-xl font-black text-gray-900 dark:text-white leading-none truncate">{val}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wider truncate">{label}</p>
             </div>
           </div>
         ))}
@@ -288,23 +317,23 @@ export function MapasVisualizacion() {
         <div className="xl:col-span-3 space-y-3">
 
           {/* Controls */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-gray-100 dark:border-slate-700 flex flex-wrap gap-3 items-center">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-3 sm:p-4 border border-gray-100 dark:border-slate-700 flex flex-wrap gap-2 sm:gap-3 items-center overflow-x-auto">
 
             {/* Tile type */}
-            <div className="flex gap-1 p-1 bg-gray-100 dark:bg-slate-700 rounded-xl">
+            <div className="flex gap-1 p-1 bg-gray-100 dark:bg-slate-700 rounded-xl flex-shrink-0">
               {(Object.entries(TILE_LAYERS) as [TileKey, typeof TILE_LAYERS[TileKey]][]).map(([key, t]) => {
                 const TIcon = t.Icon;
                 return (
                   <button
                     key={key}
                     onClick={() => setTileKey(key)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wide transition-all ${
+                    className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wide transition-all ${
                       tileKey === key
                         ? "bg-white dark:bg-slate-600 shadow text-gray-900 dark:text-white"
                         : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                     }`}
                   >
-                    <TIcon className="w-3.5 h-3.5" />
+                    <TIcon className="w-3.5 h-3.5 flex-shrink-0" />
                     <span className="hidden sm:inline">{t.label}</span>
                   </button>
                 );
@@ -313,21 +342,21 @@ export function MapasVisualizacion() {
 
             {/* OWM climate layers */}
             {OWM_KEY && (
-              <div className="flex gap-1 flex-wrap">
+              <div className="flex gap-1 flex-wrap flex-shrink-0">
                 {(Object.entries(OWM_CAPAS) as [CapaKey, typeof OWM_CAPAS[CapaKey]][]).map(([key, c]) => {
                   const CIcon = c.Icon;
                   return (
                     <button
                       key={key}
                       onClick={() => setCapaClima(key)}
-                      className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                      className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
                         capaClima === key
                           ? "bg-emerald-500 text-white border-emerald-500"
                           : "bg-gray-50 dark:bg-slate-700 text-gray-500 dark:text-gray-300 border-gray-200 dark:border-slate-600 hover:border-emerald-300"
                       }`}
                     >
-                      <CIcon className="w-3.5 h-3.5" />
-                      <span>{c.label}</span>
+                      <CIcon className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="hidden sm:inline">{c.label}</span>
                     </button>
                   );
                 })}
@@ -336,8 +365,7 @@ export function MapasVisualizacion() {
           </div>
 
           {/* Leaflet Map */}
-          <div className="rounded-2xl overflow-hidden border border-gray-200 dark:border-slate-700 shadow-lg"
-               style={{ height: "520px" }}>
+          <div className="rounded-2xl overflow-hidden border border-gray-200 dark:border-slate-700 shadow-lg h-64 sm:h-80 md:h-96 lg:h-[520px]">
             {cargando ? (
               <div className="h-full flex items-center justify-center bg-slate-100 dark:bg-slate-800">
                 <div className="text-center space-y-3">
@@ -461,6 +489,47 @@ export function MapasVisualizacion() {
                     </Marker>
                   );
                 })}
+
+                {/* Relay markers */}
+                {reles.map((r) => {
+                  const cultivo = cultivos.find((c) => c.nombre === r.cultivo_asociado);
+                  const coords = r.coordenadas || (cultivo ? cultivo.coordenadas : null);
+                  if (!coords) return null;
+                  
+                  return (
+                    <Marker
+                      key={`rele-${r.id}`}
+                      position={[coords.lat, coords.lng]}
+                      icon={releIcon(r.estado)}
+                    >
+                      <Popup maxWidth={200}>
+                        <div className="p-1.5 space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">⚡</span>
+                            <p className="font-black text-gray-900 text-sm">{r.nombre}</p>
+                          </div>
+                          {r.cultivo_asociado !== "Ninguno" && (
+                            <p className="text-xs text-gray-600">🌱 {r.cultivo_asociado}</p>
+                          )}
+                          <p className="text-xs text-gray-600">📍 Zona {r.zona}</p>
+                          <span className={`inline-block text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                            r.estado === "encendido"
+                              ? "bg-green-100 text-green-700"
+                              : "bg-gray-100 text-gray-700"
+                          }`}>
+                            {r.estado}
+                          </span>
+                          {r.modo && (
+                            <p className="text-[10px] text-gray-500">Modo: {r.modo}</p>
+                          )}
+                          {r.descripcion && (
+                            <p className="text-[10px] text-gray-600 italic">{r.descripcion}</p>
+                          )}
+                        </div>
+                      </Popup>
+                    </Marker>
+                  );
+                })}
               </MapContainer>
             )}
           </div>
@@ -477,6 +546,10 @@ export function MapasVisualizacion() {
             <div className="flex items-center gap-1.5">
               <div style={{ width: 0, height: 0, borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderBottom: "12px solid #ef4444" }} />
               <span className="text-xs font-bold text-gray-600 dark:text-gray-300">Alerta</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div style={{ width: 24, height: 24, borderRadius: "3px", background: "#22c55e", border: "2px solid white", boxShadow: "0 0 0 1px #cbd5e1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px" }}>⚡</div>
+              <span className="text-xs font-bold text-gray-600 dark:text-gray-300">Relé Activo</span>
             </div>
           </div>
         </div>

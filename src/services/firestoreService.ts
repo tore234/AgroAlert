@@ -123,6 +123,7 @@ export interface Rele {
   cultivo_asociado: string;
   descripcion: string;
   ultima_activacion: string;
+  coordenadas?: { lat: number; lng: number };
 }
 
 // ── Cultivos ───────────────────────────────────────────────────────────────
@@ -264,8 +265,213 @@ export async function getNodos(uid: string): Promise<NodoSensor[]> {
 }
 
 export async function saveNodos(uid: string, sensores: NodoSensor[]): Promise<void> {
-  await setDoc(doc(db, "usuarios", uid, "nodos_config", "main"), { 
-    sensores, 
-    updatedAt: serverTimestamp() 
+  await setDoc(doc(db, "usuarios", uid, "nodos_config", "main"), {
+    sensores,
+    updatedAt: serverTimestamp()
   });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// COLECCIONES GLOBALES COMPARTIDAS
+// Todos los roles (admin, operador, consultor) leen y escriben en la misma data.
+// Prefijo "g_" para distinguirlas de las subcollecciones por-usuario.
+// ══════════════════════════════════════════════════════════════════════════════
+
+const G = {
+  cultivos:         () => collection(db, "g_cultivos"),
+  cultivo:          (id: string) => doc(db, "g_cultivos", id),
+  reles:            () => collection(db, "g_reles"),
+  rele:             (id: string) => doc(db, "g_reles", id),
+  alertasHist:      () => collection(db, "g_alertas_historial"),
+  alertaHist:       (id: string) => doc(db, "g_alertas_historial", id),
+  alertasConf:      () => collection(db, "g_alertas_config"),
+  alertaConf:       (id: string) => doc(db, "g_alertas_config", id),
+  personal:         () => collection(db, "g_personal"),
+  persona:          (id: string) => doc(db, "g_personal", id),
+  nodos:            () => doc(db, "g_config", "nodos"),
+};
+
+// ── Perfil global del usuario ─────────────────────────────────────────────
+
+export interface PerfilUsuario {
+  uid: string;
+  nombre: string;
+  correo: string;
+  rol: "administrador" | "operador" | "consultor";
+  zona: string;
+  estado: string;
+  fecha_registro: string;
+}
+
+export async function getPerfilUsuario(uid: string): Promise<PerfilUsuario | null> {
+  const snap = await getDoc(G.persona(uid));
+  if (!snap.exists()) return null;
+  return { uid, ...snap.data() } as PerfilUsuario;
+}
+
+export async function upsertPerfilUsuario(data: PerfilUsuario): Promise<void> {
+  await setDoc(G.persona(data.uid), {
+    nombre:          data.nombre,
+    correo:          data.correo,
+    rol:             data.rol,
+    zona:            data.zona,
+    estado:          data.estado,
+    fecha_registro:  data.fecha_registro,
+  }, { merge: true });
+}
+
+// ── Global Cultivos ───────────────────────────────────────────────────────
+
+export async function getCultivosGlobal(): Promise<Cultivo[]> {
+  const snap = await getDocs(query(G.cultivos(), orderBy("fechaSiembra", "desc")));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Cultivo));
+}
+
+export async function saveCultivoGlobal(
+  data: Omit<Cultivo, "id"> & { creado_por?: string },
+  id?: string
+): Promise<void> {
+  if (id) {
+    await updateDoc(G.cultivo(id), { ...data });
+  } else {
+    await addDoc(G.cultivos(), { ...data });
+  }
+}
+
+export async function deleteCultivoGlobal(id: string): Promise<void> {
+  await deleteDoc(G.cultivo(id));
+}
+
+// ── Global Relés ──────────────────────────────────────────────────────────
+
+export async function getRelesGlobal(): Promise<Rele[]> {
+  try {
+    const snap = await getDocs(query(G.reles(), orderBy("ultima_activacion", "desc")));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Rele));
+  } catch {
+    const snap = await getDocs(G.reles());
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Rele));
+  }
+}
+
+export async function saveReleGlobal(
+  data: Omit<Rele, "id"> & { creado_por?: string },
+  id?: string
+): Promise<void> {
+  if (id) {
+    await updateDoc(G.rele(id), { ...data });
+  } else {
+    await addDoc(G.reles(), { ...data });
+  }
+}
+
+export async function deleteReleGlobal(id: string): Promise<void> {
+  await deleteDoc(G.rele(id));
+}
+
+export async function toggleReleGlobal(id: string, nuevoEstado: "encendido" | "apagado"): Promise<void> {
+  await updateDoc(G.rele(id), {
+    estado: nuevoEstado,
+    ultima_activacion: new Date().toISOString(),
+  });
+}
+
+// ── Global Alertas Historial ──────────────────────────────────────────────
+
+export async function getAlertasHistorialGlobal(): Promise<AlertaHistorial[]> {
+  try {
+    const snap = await getDocs(query(G.alertasHist(), orderBy("fecha_deteccion", "desc")));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as AlertaHistorial));
+  } catch {
+    const snap = await getDocs(G.alertasHist());
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as AlertaHistorial));
+  }
+}
+
+export async function addAlertaHistorialGlobal(data: Omit<AlertaHistorial, "id">): Promise<void> {
+  await addDoc(G.alertasHist(), { ...data });
+}
+
+export async function deleteAlertaHistorialGlobal(id: string): Promise<void> {
+  await deleteDoc(G.alertaHist(id));
+}
+
+export async function deleteAlertasHistorialGlobalByCultivo(cultivo: string): Promise<void> {
+  try {
+    const snap = await getDocs(
+      query(G.alertasHist(), where("nombre_cultivo", "==", cultivo))
+    );
+    await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+  } catch {
+    const snap = await getDocs(G.alertasHist());
+    const targets = snap.docs.filter((d) => d.data().nombre_cultivo === cultivo);
+    await Promise.all(targets.map((d) => deleteDoc(d.ref)));
+  }
+}
+
+// ── Global Alertas Config ─────────────────────────────────────────────────
+
+export async function getAlertasConfigGlobal(): Promise<ConfigAlerta[]> {
+  const snap = await getDocs(G.alertasConf());
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as ConfigAlerta));
+}
+
+export async function saveAlertaConfigGlobal(
+  data: Omit<ConfigAlerta, "id">,
+  id?: string
+): Promise<string> {
+  if (id) {
+    await updateDoc(G.alertaConf(id), { ...data });
+    return id;
+  } else {
+    const ref = await addDoc(G.alertasConf(), { ...data });
+    return ref.id;
+  }
+}
+
+export async function deleteAlertaConfigGlobal(id: string): Promise<void> {
+  await deleteDoc(G.alertaConf(id));
+}
+
+// ── Global Personal (registro de usuarios del campo) ─────────────────────
+
+export async function getPersonalGlobal(): Promise<PerfilUsuario[]> {
+  try {
+    const snap = await getDocs(query(G.personal(), orderBy("fecha_registro", "desc")));
+    return snap.docs.map((d) => ({ uid: d.id, ...d.data() } as PerfilUsuario));
+  } catch {
+    const snap = await getDocs(G.personal());
+    return snap.docs.map((d) => ({ uid: d.id, ...d.data() } as PerfilUsuario));
+  }
+}
+
+export async function savePersonaGlobal(data: PerfilUsuario): Promise<void> {
+  await setDoc(G.persona(data.uid || data.correo), {
+    nombre:         data.nombre,
+    correo:         data.correo,
+    rol:            data.rol,
+    zona:           data.zona,
+    estado:         data.estado,
+    fecha_registro: data.fecha_registro,
+  }, { merge: true });
+}
+
+export async function deletePersonaGlobal(uid: string): Promise<void> {
+  await deleteDoc(G.persona(uid));
+}
+
+// ── Global Nodos / Sensores ───────────────────────────────────────────────
+
+export async function getNodosGlobal(): Promise<NodoSensor[]> {
+  try {
+    const snap = await getDoc(G.nodos());
+    if (!snap.exists()) return [];
+    return (snap.data().sensores ?? []) as NodoSensor[];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveNodosGlobal(sensores: NodoSensor[]): Promise<void> {
+  await setDoc(G.nodos(), { sensores, updatedAt: serverTimestamp() }, { merge: true });
 }

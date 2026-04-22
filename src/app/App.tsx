@@ -29,6 +29,7 @@ import {
 import { User } from "firebase/auth";
 import { useTheme } from "../ThemeContext";
 import { useUserRole, rolePermissions, ROLE_EMAIL_MAP } from "../hooks/useUserRole";
+import { useCurrentUser } from "../hooks/useCurrentUser";
 import { initializeUserProfile } from "../services/firestoreService";
 
 // ── Nav definition ─────────────────────────────────────────────────────────
@@ -97,6 +98,7 @@ export default function App() {
 
   const { theme, toggleTheme } = useTheme();
   const { rol, loading: rolLoading } = useUserRole();
+  const { nombre: nombreUsuario } = useCurrentUser();
 
   // Permitted nav items for the current user role
   const permisosRol = rol ? (rolePermissions[rol] ?? []) : [];
@@ -356,9 +358,16 @@ export default function App() {
 
         {/* Bottom actions */}
         <div className={`border-t border-slate-800 py-3 px-2 space-y-1 flex-shrink-0 ${collapsed ? "flex flex-col items-center" : ""}`}>
-          {/* User email */}
-          {!collapsed && usuario?.email && (
-            <p className="px-3 py-1 text-[9px] text-slate-600 font-bold truncate">{usuario.email}</p>
+          {/* User name + email */}
+          {!collapsed && (
+            <div className="px-3 py-1 min-w-0">
+              {nombreUsuario && (
+                <p className="text-[10px] text-slate-300 font-black truncate">{nombreUsuario}</p>
+              )}
+              {usuario?.email && (
+                <p className="text-[9px] text-slate-600 font-bold truncate">{usuario.email}</p>
+              )}
+            </div>
           )}
 
           <button
@@ -384,10 +393,10 @@ export default function App() {
       </aside>
 
       {/* ── MAIN AREA ─────────────────────────────────────────── */}
-      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${mainMargin}`}>
+      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${mainMargin} ${mobileOpen ? "lg:z-auto lg:pointer-events-auto z-10 pointer-events-none" : "z-auto pointer-events-auto"}`}>
 
         {/* Mobile top header */}
-        <header className="lg:hidden sticky top-0 z-20 flex items-center justify-between h-14 px-4 bg-slate-900 dark:bg-slate-950 border-b border-slate-800 shadow-md">
+        <header className="lg:hidden sticky top-0 z-50 flex items-center justify-between h-14 px-4 bg-slate-900 dark:bg-slate-950 border-b border-slate-800 shadow-md">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMobileOpen(true)}
