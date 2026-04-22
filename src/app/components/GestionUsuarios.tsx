@@ -4,6 +4,7 @@ import Swal from "sweetalert2";
 import { useAuth } from "../../hooks/useAuth";
 import {
   getUsuariosCampo, saveUsuarioCampo, deleteUsuarioCampo, UsuarioCampo,
+  setGlobalEmailRole, removeGlobalEmailRole,
 } from "../../services/firestoreService";
 
 const rolColors = {
@@ -44,6 +45,17 @@ export function GestionUsuarios() {
           ? (usuarios.find((u) => u.id === usuarioEditando)?.fecha_registro ?? new Date().toISOString())
           : new Date().toISOString(),
       }, usuarioEditando ?? undefined);
+
+      // Sincronizar rol en el mapa global para que tome efecto en el login del usuario
+      if (formulario.correo) {
+        if (formulario.rol === "administrador" || formulario.rol === "operador") {
+          await setGlobalEmailRole(formulario.correo, formulario.rol);
+        } else {
+          // consultor = eliminar del mapa (rol por defecto)
+          await removeGlobalEmailRole(formulario.correo);
+        }
+      }
+
       Swal.fire({ title: usuarioEditando ? "¡Actualizado!" : "¡Registrado!",
         text: usuarioEditando ? "Datos actualizados" : "Usuario agregado a AgroAlert",
         icon: "success", confirmButtonColor: "#10b981" });
@@ -67,7 +79,10 @@ export function GestionUsuarios() {
     }).then(async (result) => {
       if (!result.isConfirmed || !uid) return;
       try {
+        const usuario = usuarios.find((u) => u.id === id);
         await deleteUsuarioCampo(uid, id);
+        // Limpiar del mapa global si tenía rol elevado
+        if (usuario?.correo) await removeGlobalEmailRole(usuario.correo);
         Swal.fire("Eliminado", "El usuario ha sido removido", "success");
         await fetchUsuarios();
       } catch { Swal.fire("Error", "No se pudo eliminar el registro", "error"); }

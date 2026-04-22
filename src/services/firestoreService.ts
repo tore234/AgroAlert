@@ -5,6 +5,33 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 
+// ── Role map global ────────────────────────────────────────────────────────
+// /global/role_assignments  →  { "email@x.com": "administrador" | "operador" }
+// Solo se almacenan roles elevados; consultor es el default implícito.
+
+const ROLE_MAP_REF = () => doc(db, "global", "role_assignments");
+
+export async function getGlobalRoleMap(): Promise<Record<string, string>> {
+  try {
+    const snap = await getDoc(ROLE_MAP_REF());
+    return snap.exists() ? (snap.data() as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function setGlobalEmailRole(
+  email: string,
+  rol: "administrador" | "operador"
+): Promise<void> {
+  await setDoc(ROLE_MAP_REF(), { [email.toLowerCase()]: rol }, { merge: true });
+}
+
+export async function removeGlobalEmailRole(email: string): Promise<void> {
+  const { deleteField } = await import("firebase/firestore");
+  await setDoc(ROLE_MAP_REF(), { [email.toLowerCase()]: deleteField() }, { merge: true });
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 /** Subcollection path: /usuarios/{uid}/{name} */

@@ -117,17 +117,22 @@ export default function App() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  // Solo bloquear scroll cuando hay sesión activa Y el sidebar está abierto
   useEffect(() => {
-    document.body.style.overflow = mobileOpen ? "hidden" : "";
+    document.body.style.overflow = (usuario && mobileOpen) ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
-  }, [mobileOpen]);
+  }, [mobileOpen, usuario]);
 
   useEffect(() => {
     const unsubscribe = onAuthChange((user) => {
       setUsuario(user);
       setAuthLoading(false);
-      // Para usuarios normales (no en el mapa de emails fijos),
-      // inicializar perfil en Firestore si es la primera vez
+      if (!user) {
+        // Limpiar estado de UI al cerrar sesión (incluso por expiración externa)
+        setMobileOpen(false);
+        document.body.style.overflow = "";
+      }
+      // Inicializar perfil en Firestore para usuarios nuevos
       if (user?.email && !ROLE_EMAIL_MAP[user.email.toLowerCase()]) {
         initializeUserProfile(user.uid, user.email, "consultor");
       }
@@ -171,7 +176,13 @@ export default function App() {
   };
 
   const ejecutarLogout = async () => {
-    try { await logout(); setVistaAuth("landing"); }
+    try {
+      // Cerrar sidebar y liberar scroll ANTES de logout para evitar el bloqueo
+      setMobileOpen(false);
+      document.body.style.overflow = "";
+      await logout();
+      setVistaAuth("landing");
+    }
     catch (err: any) { setError("Error al cerrar sesión: " + err.message); }
   };
 

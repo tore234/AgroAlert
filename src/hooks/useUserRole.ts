@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { useAuth } from "./useAuth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../firebase";
+import { getGlobalRoleMap } from "../services/firestoreService";
 
 export type UserRole = "administrador" | "operador" | "consultor" | null;
 
-// Emails con rol fijo — tienen prioridad sobre cualquier dato en Firestore
+// Emails hardcodeados con máxima prioridad (nunca se pueden degradar)
 export const ROLE_EMAIL_MAP: Record<string, "administrador" | "operador" | "consultor"> = {
   "adm.agroalert@gmail.com":  "administrador",
   "oper.agroalert@gmail.com": "operador",
@@ -25,36 +26,29 @@ export function useUserRole() {
 
     const fetchUserRole = async () => {
       try {
-        const email = user.email ?? "";
-        const rolFijo = ROLE_EMAIL_MAP[email.toLowerCase()];
+        const email = (user.email ?? "").toLowerCase();
 
-        if (rolFijo) {
-          // Email conocido: garantizar que Firestore tenga el rol correcto
-          const ref = doc(db, "usuarios", uid, "usuarios_campo", uid);
-          const snap = await getDoc(ref);
-          if (!snap.exists() || snap.data().rol !== rolFijo) {
-            await setDoc(ref, {
-              nombre:          email.split("@")[0],
-              correo:          email,
-              telefono:        "",
-              rol:             rolFijo,
-              zona:            "Centro",
-              estado:          "Activo",
-              fecha_registro:  snap.exists() ? snap.data().fecha_registro : new Date().toISOString(),
-            }, { merge: true });
-          }
-          setRol(rolFijo);
+        // 1️⃣ Prioridad máxima: emails hardcodeados
+        const rolHardcoded = ROLE_EMAIL_MAP[email];
+        if (rolHardcoded) {
+          await ensureProfile(uid, email, rolHardcoded);
+          setRol(rolHardcoded);
           return;
         }
 
-        // Usuario normal: leer rol desde Firestore
+        // 2️⃣ Mapa global gestionado por admins (/global/role_assignments)
+        const globalMap = await getGlobalRoleMap();
+        const rolGlobal = globalMap[email] as UserRole | undefined;
+        if (rolGlobal) {
+          await ensureProfile(uid, email, rolGlobal as "administrador" | "operador" | "consultor");
+          setRol(rolGlobal);
+          return;
+        }
+
+        // 3️⃣ Perfil propio en Firestore (fallback)
         const ref = doc(db, "usuarios", uid, "usuarios_campo", uid);
         const snap = await getDoc(ref);
-        if (snap.exists()) {
-          setRol((snap.data().rol as UserRole) || "consultor");
-        } else {
-          setRol("consultor");
-        }
+        setRol(snap.exists() ? ((snap.data().rol as UserRole) || "consultor") : "consultor");
       } catch (error) {
         console.error("Error obteniendo rol:", error);
         setRol("consultor");
@@ -67,6 +61,26 @@ export function useUserRole() {
   }, [uid]);
 
   return { rol, loading };
+}
+
+async function ensureProfile(
+  uid: string,
+  email: string,
+  rol: "administrador" | "operador" | "consultor"
+) {
+  const ref = doc(db, "usuarios", uid, "usuarios_campo", uid);
+  const snap = await getDoc(ref);
+  if (!snap.exists() || snap.data().rol !== rol) {
+    await setDoc(ref, {
+      nombre:         email.split("@")[0],
+      correo:         email,
+      telefono:       snap.exists() ? snap.data().telefono  : "",
+      zona:           snap.exists() ? snap.data().zona       : "Centro",
+      estado:         snap.exists() ? snap.data().estado     : "Activo",
+      fecha_registro: snap.exists() ? snap.data().fecha_registro : new Date().toISOString(),
+      rol,
+    }, { merge: true });
+  }
 }
 
 // Función auxiliar para verificar permisos

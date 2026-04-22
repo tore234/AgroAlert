@@ -3,7 +3,9 @@ import App from "./app/App";
 import { ThemeProvider } from "./ThemeContext";
 
 // @ts-ignore
-import "./styles/index.css"; 
+import "./styles/index.css";
+// @ts-ignore
+import "leaflet/dist/leaflet.css";
 
 const rootElement = document.getElementById("root");
 
