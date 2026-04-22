@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   Sprout, Plus, MapPin, Calendar, TrendingUp, Edit,
-  Trash2, Search, CheckCircle2, Leaf, BarChart3
+  Trash2, Search, CheckCircle2, Leaf, BarChart3, LocateFixed, Loader2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -23,7 +23,9 @@ export function GestionCultivos() {
   const [formulario, setFormulario] = useState({
     nombre: "", zona: "", hectareas: 0, fechaSiembra: "",
     estado: "activo" as Cultivo["estado"],
+    lat: "", lng: "",
   });
+  const [buscandoUbicacion, setBuscandoUbicacion] = useState(false);
 
   const cargarDatos = async () => {
     if (!uid) return;
@@ -40,15 +42,40 @@ export function GestionCultivos() {
   useEffect(() => { cargarDatos(); }, [uid]);
 
   const limpiarFormulario = () => {
-    setFormulario({ nombre: "", zona: "", hectareas: 0, fechaSiembra: "", estado: "activo" });
+    setFormulario({ nombre: "", zona: "", hectareas: 0, fechaSiembra: "", estado: "activo", lat: "", lng: "" });
     setCultivoEditando(null);
     setMostrarFormulario(false);
+  };
+
+  const usarUbicacionActual = () => {
+    if (!navigator.geolocation) {
+      Swal.fire("Sin soporte", "Tu navegador no soporta geolocalización.", "warning");
+      return;
+    }
+    setBuscandoUbicacion(true);
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setFormulario((f) => ({ ...f, lat: coords.latitude.toFixed(6), lng: coords.longitude.toFixed(6) }));
+        setBuscandoUbicacion(false);
+      },
+      () => {
+        Swal.fire("Sin permiso", "Activa el permiso de ubicación en tu navegador.", "error");
+        setBuscandoUbicacion(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
   };
 
   const manejarGuardar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!uid || !formulario.nombre || !formulario.zona || formulario.hectareas <= 0 || !formulario.fechaSiembra) {
       Swal.fire({ title: "¡Formulario Incompleto!", text: "Llena todos los campos", icon: "warning", confirmButtonColor: "#10b981" });
+      return;
+    }
+    const lat = parseFloat(formulario.lat);
+    const lng = parseFloat(formulario.lng);
+    if (!formulario.lat || !formulario.lng || isNaN(lat) || isNaN(lng)) {
+      Swal.fire({ title: "Ubicación requerida", text: "Agrega las coordenadas del cultivo o usa tu ubicación actual.", icon: "warning", confirmButtonColor: "#10b981" });
       return;
     }
     try {
@@ -58,7 +85,7 @@ export function GestionCultivos() {
         hectareas: formulario.hectareas,
         fechaSiembra: formulario.fechaSiembra,
         estado: formulario.estado,
-        coordenadas: { lat: 20.4, lng: -100.3 },
+        coordenadas: { lat, lng },
       }, cultivoEditando ?? undefined);
 
       Swal.fire({ icon: "success", title: cultivoEditando ? "Registro Actualizado" : "Cultivo Registrado",
@@ -218,6 +245,54 @@ export function GestionCultivos() {
               </div>
             </div>
 
+            {/* Coordenadas */}
+            <div className="md:col-span-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
+                  Ubicación GPS *
+                </label>
+                <button
+                  type="button"
+                  onClick={usarUbicacionActual}
+                  disabled={buscandoUbicacion}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:opacity-60 text-white rounded-xl text-xs font-bold transition-all active:scale-95"
+                >
+                  {buscandoUbicacion
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <LocateFixed className="w-3.5 h-3.5" />}
+                  {buscandoUbicacion ? "Obteniendo..." : "Usar ubicación actual"}
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1">Latitud</label>
+                  <input
+                    type="number" step="any"
+                    className="w-full px-4 py-3 bg-gray-50 dark:bg-slate-700 dark:text-white border border-gray-200 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all"
+                    placeholder="Ej: 20.456789"
+                    value={formulario.lat}
+                    onChange={(e) => setFormulario({ ...formulario, lat: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1">Longitud</label>
+                  <input
+                    type="number" step="any"
+                    className="w-full px-4 py-3 bg-gray-50 dark:bg-slate-700 dark:text-white border border-gray-200 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all"
+                    placeholder="Ej: -100.345678"
+                    value={formulario.lng}
+                    onChange={(e) => setFormulario({ ...formulario, lng: e.target.value })}
+                  />
+                </div>
+              </div>
+              {formulario.lat && formulario.lng && (
+                <p className="text-[11px] text-emerald-600 font-bold ml-1 flex items-center gap-1">
+                  <MapPin className="w-3 h-3" />
+                  {parseFloat(formulario.lat).toFixed(5)}, {parseFloat(formulario.lng).toFixed(5)}
+                </p>
+              )}
+            </div>
+
             <div className="md:col-span-3 flex justify-end gap-3 pt-4 border-t border-gray-50 dark:border-slate-700">
               <button type="button" onClick={limpiarFormulario}
                 className="px-8 py-3 bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-gray-300 rounded-xl font-bold hover:bg-gray-200 transition-colors">
@@ -258,6 +333,7 @@ export function GestionCultivos() {
                       <th className="px-6 py-4">Cultivo</th>
                       <th className="px-6 py-4">Superficie</th>
                       <th className="px-6 py-4">Fecha Inicio</th>
+                      <th className="px-6 py-4">Coordenadas</th>
                       <th className="px-6 py-4">Estatus</th>
                       <th className="px-6 py-4 text-right">Gestión</th>
                     </tr>
@@ -282,6 +358,16 @@ export function GestionCultivos() {
                           </div>
                         </td>
                         <td className="px-6 py-5">
+                          {c.coordenadas?.lat && c.coordenadas?.lng ? (
+                            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-mono">
+                              <MapPin className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                              {c.coordenadas.lat.toFixed(4)}, {c.coordenadas.lng.toFixed(4)}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-300 italic">Sin ubicación</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-5">
                           <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wider ${
                             c.estado === "cosecha" ? "bg-orange-100 text-orange-700" :
                             c.estado === "activo"  ? "bg-green-100 text-green-700" :
@@ -293,7 +379,7 @@ export function GestionCultivos() {
                         <td className="px-6 py-5 text-right">
                           <div className="flex justify-end gap-2">
                             <button onClick={() => {
-                              setFormulario({ nombre: c.nombre, zona: c.zona, hectareas: c.hectareas, fechaSiembra: c.fechaSiembra, estado: c.estado });
+                              setFormulario({ nombre: c.nombre, zona: c.zona, hectareas: c.hectareas, fechaSiembra: c.fechaSiembra, estado: c.estado, lat: String(c.coordenadas.lat), lng: String(c.coordenadas.lng) });
                               setCultivoEditando(c.id); setMostrarFormulario(true);
                               window.scrollTo({ top: 0, behavior: "smooth" });
                             }} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors">

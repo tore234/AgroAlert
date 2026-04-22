@@ -5,7 +5,7 @@ import {
 import L from "leaflet";
 import {
   MapPin, Thermometer, Droplets, Wind, AlertTriangle,
-  Layers, TreePine, RefreshCw, Navigation, Satellite, Map,
+  Layers, TreePine, RefreshCw, Navigation, Satellite, Map, LocateFixed,
 } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import {
@@ -96,6 +96,24 @@ function cultivoIcon(color: string) {
   });
 }
 
+function ubicacionIcon() {
+  return L.divIcon({
+    className: "",
+    html: `<div style="
+      width:20px;height:20px;border-radius:50%;
+      background:#3b82f6;border:3px solid white;
+      box-shadow:0 0 0 4px rgba(59,130,246,0.3);
+      animation:pulse-blue 2s infinite;
+    "></div>
+    <style>
+      @keyframes pulse-blue{0%,100%{box-shadow:0 0 0 4px rgba(59,130,246,0.3)}50%{box-shadow:0 0 0 10px rgba(59,130,246,0.1)}}
+    </style>`,
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+    popupAnchor: [0, -14],
+  });
+}
+
 function alertaIcon() {
   return L.divIcon({
     className: "",
@@ -122,6 +140,26 @@ function FlyTo({ target }: { target: { lat: number; lng: number; zoom: number } 
   return null;
 }
 
+// ── Real-time location hook ───────────────────────────────────────────────────
+
+type GeoPos = { lat: number; lng: number; accuracy: number } | null;
+
+function useRealTimeLocation(): GeoPos {
+  const [pos, setPos] = useState<GeoPos>(null);
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    const id = navigator.geolocation.watchPosition(
+      ({ coords }) => setPos({ lat: coords.latitude, lng: coords.longitude, accuracy: coords.accuracy }),
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 5000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, []);
+
+  return pos;
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export function MapasVisualizacion() {
@@ -134,6 +172,8 @@ export function MapasVisualizacion() {
   const [capaClima, setCapaClima] = useState<CapaKey>("ninguna");
   const [zonaFiltro, setZonaFiltro] = useState("Todas");
   const [flyTarget, setFlyTarget] = useState<{ lat: number; lng: number; zoom: number } | null>(null);
+
+  const miUbicacion = useRealTimeLocation();
 
   const cargarDatos = useCallback(async () => {
     if (!uid) return;
@@ -202,6 +242,15 @@ export function MapasVisualizacion() {
             <option value="Todas">Todas las zonas</option>
             {zonas.map((z) => <option key={z} value={z}>Zona {z}</option>)}
           </select>
+          {miUbicacion && (
+            <button
+              onClick={() => setFlyTarget({ lat: miUbicacion.lat, lng: miUbicacion.lng, zoom: 15 })}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-sm font-bold transition-all active:scale-95"
+            >
+              <LocateFixed className="w-4 h-4" />
+              Mi ubicación
+            </button>
+          )}
           <button
             onClick={cargarDatos}
             disabled={cargando}
@@ -365,6 +414,27 @@ export function MapasVisualizacion() {
                     </Popup>
                   </Marker>
                 ))}
+
+                {/* User real-time location */}
+                {miUbicacion && (
+                  <>
+                    <Circle
+                      center={[miUbicacion.lat, miUbicacion.lng]}
+                      radius={miUbicacion.accuracy}
+                      pathOptions={{ color: "#3b82f6", fillColor: "#3b82f6", fillOpacity: 0.1, weight: 1.5 }}
+                    />
+                    <Marker position={[miUbicacion.lat, miUbicacion.lng]} icon={ubicacionIcon()}>
+                      <Popup maxWidth={180}>
+                        <div className="p-1 space-y-1">
+                          <p className="font-black text-blue-700 text-sm">Tu ubicación actual</p>
+                          <p className="text-xs text-gray-600">Lat: {miUbicacion.lat.toFixed(5)}</p>
+                          <p className="text-xs text-gray-600">Lng: {miUbicacion.lng.toFixed(5)}</p>
+                          <p className="text-xs text-gray-400">Precisión: ±{Math.round(miUbicacion.accuracy)} m</p>
+                        </div>
+                      </Popup>
+                    </Marker>
+                  </>
+                )}
 
                 {/* Alert markers */}
                 {alertasFiltradas.slice(0, 20).map((a) => {
