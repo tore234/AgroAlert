@@ -200,7 +200,7 @@ Si la API no está disponible, el sistema activa **modo simulación** con datos 
 
 ## 🤝 Créditos
 
-Diseño original en [Figma](https://www.figma.com/design/wgxFBbgUkrWWPOYYOnannO/Sistema-de-alertas-clim%C3%A1ticas) · Desarrollado con ❤️ para el campo mexicano.
+Desarrollado por https://github.com/2580paola · Desarrollado con ❤️ para el campo mexicano.
 
 ---
 
