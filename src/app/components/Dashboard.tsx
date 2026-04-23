@@ -82,7 +82,7 @@ export function DashboardPrincipal() {
   ]);
   const [clima,     setClima]     = useState<any[]>([]);
   const [cargando,  setCargando]  = useState(true);
-  const [metricaActiva, setMetricaActiva] = useState<"temp" | "humedad" | "viento">("temp");
+  const [metricaActiva, setMetricaActiva] = useState<"temp" | "humedad" | "viento" | "reles" | "cosecha">("temp");
   const [aviso, setAviso] = useState({ visible: false, mensaje: "", tipo: "" });
   const [guardando, setGuardando] = useState(false);
 
@@ -233,6 +233,7 @@ export function DashboardPrincipal() {
 
   const metricaLabel: Record<string, string> = {
     temp: "Temperatura (°C)", humedad: "Humedad (%)", viento: "Viento (km/h)",
+    reles: "Relés Activos", cosecha: "Listos para Cosecha",
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -295,7 +296,7 @@ export function DashboardPrincipal() {
           return (
             <button
               key={card.id}
-              onClick={() => card.id !== "cosecha" && setMetricaActiva(card.id as any)}
+              onClick={() => setMetricaActiva(card.id as any)}
               className={`flex flex-col p-3 xs:p-4 sm:p-6 rounded-xl xs:rounded-2xl sm:rounded-3xl border-2 transition-all duration-300 text-left hover:shadow-xl hover:-translate-y-1 ${
                 isActive ? `${card.border} ${card.bg}` : "bg-white dark:bg-slate-800 border-transparent shadow-sm"
               }`}
@@ -312,14 +313,17 @@ export function DashboardPrincipal() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 lg:gap-10">
 
-        {/* Gráfica semanal OWM */}
+        {/* Panel principal: gráfica o vista de detalle */}
         <div className="md:col-span-2 bg-white dark:bg-slate-800 p-4 xs:p-6 sm:p-8 md:p-10 rounded-2xl xs:rounded-3xl sm:rounded-[3rem] shadow-sm border border-gray-100 dark:border-slate-700">
           <div className="flex items-center justify-between mb-4 xs:mb-6 sm:mb-8 gap-2 flex-wrap">
             <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2 min-w-0">
               <TrendingUp className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-              <span className="truncate">{metricaLabel[metricaActiva]} — Esta semana</span>
+              <span className="truncate">
+                {metricaLabel[metricaActiva]}
+                {(metricaActiva === "temp" || metricaActiva === "humedad" || metricaActiva === "viento") && " — Esta semana"}
+              </span>
             </h3>
-            <div className="flex gap-1">
+            <div className="flex gap-1 flex-wrap">
               {(["temp", "humedad", "viento"] as const).map((m) => (
                 <button
                   key={m}
@@ -333,33 +337,145 @@ export function DashboardPrincipal() {
                   {m === "temp" ? "Temp" : m === "humedad" ? "Hum" : "Vto"}
                 </button>
               ))}
+              <button
+                onClick={() => setMetricaActiva("reles")}
+                className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase transition-all ${
+                  metricaActiva === "reles"
+                    ? "bg-yellow-500 text-white"
+                    : "bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600"
+                }`}
+              >
+                Relés
+              </button>
+              <button
+                onClick={() => setMetricaActiva("cosecha")}
+                className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase transition-all ${
+                  metricaActiva === "cosecha"
+                    ? "bg-purple-500 text-white"
+                    : "bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600"
+                }`}
+              >
+                Cosecha
+              </button>
             </div>
           </div>
-          <div className="h-60 xs:h-72 sm:h-80 md:h-96 w-full">
-            {clima.length === 0 ? (
-              <div className="h-full flex items-center justify-center">
-                <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={clima}>
-                  <defs>
-                    <linearGradient id="dashGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor="#10b981" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="name" fontSize={11} fontWeight="900" axisLine={false} tickLine={false} />
-                  <YAxis fontSize={11} fontWeight="900" axisLine={false} tickLine={false} />
-                  <Tooltip
-                    contentStyle={{ borderRadius: "20px", border: "none", boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)" }}
-                  />
-                  <Area type="monotone" dataKey={metricaActiva} stroke="#10b981" strokeWidth={3} fill="url(#dashGradient)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </div>
+
+          {/* Vista gráfica climática */}
+          {(metricaActiva === "temp" || metricaActiva === "humedad" || metricaActiva === "viento") && (
+            <div className="h-60 xs:h-72 sm:h-80 md:h-96 w-full">
+              {clima.length === 0 ? (
+                <div className="h-full flex items-center justify-center">
+                  <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={clima}>
+                    <defs>
+                      <linearGradient id="dashGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="#10b981" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" fontSize={11} fontWeight="900" axisLine={false} tickLine={false} />
+                    <YAxis fontSize={11} fontWeight="900" axisLine={false} tickLine={false} />
+                    <Tooltip
+                      contentStyle={{ borderRadius: "20px", border: "none", boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)" }}
+                    />
+                    <Area type="monotone" dataKey={metricaActiva} stroke="#10b981" strokeWidth={3} fill="url(#dashGradient)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          )}
+
+          {/* Vista relés activos */}
+          {metricaActiva === "reles" && (
+            <div className="h-60 xs:h-72 sm:h-80 md:h-96 overflow-y-auto">
+              {cargando ? (
+                <div className="h-full flex items-center justify-center">
+                  <div className="w-8 h-8 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : reles.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center gap-3 text-gray-400">
+                  <Zap className="w-10 h-10 opacity-20" />
+                  <p className="text-xs font-black uppercase tracking-widest">Sin relés registrados</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {reles.map((r) => {
+                    const encendido = r.estado === "encendido";
+                    return (
+                      <div
+                        key={r.id}
+                        className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${
+                          encendido
+                            ? "bg-yellow-50 dark:bg-yellow-900/20 border-yellow-300 dark:border-yellow-700"
+                            : "bg-gray-50 dark:bg-slate-700/40 border-gray-200 dark:border-slate-600"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`p-2 rounded-xl ${encendido ? "bg-yellow-100 dark:bg-yellow-800/40" : "bg-gray-100 dark:bg-slate-600"}`}>
+                            <Zap className={`w-4 h-4 ${encendido ? "text-yellow-600" : "text-gray-400"}`} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-gray-800 dark:text-white truncate">{r.nombre}</p>
+                            {r.cultivo_asociado && r.cultivo_asociado !== "Ninguno" && (
+                              <p className="text-[9px] text-gray-500 dark:text-gray-400 truncate">🌱 {r.cultivo_asociado}</p>
+                            )}
+                          </div>
+                        </div>
+                        <span className={`flex-shrink-0 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase ${
+                          encendido
+                            ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400"
+                            : "bg-gray-100 dark:bg-slate-600 text-gray-500 dark:text-gray-400"
+                        }`}>
+                          {encendido ? "⚡ ON" : "○ OFF"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Vista cosecha */}
+          {metricaActiva === "cosecha" && (
+            <div className="h-60 xs:h-72 sm:h-80 md:h-96 overflow-y-auto">
+              {cargando ? (
+                <div className="h-full flex items-center justify-center">
+                  <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : cultivos.filter((c) => c.estado === "cosecha").length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center gap-3 text-gray-400">
+                  <CheckCircle2 className="w-10 h-10 opacity-20" />
+                  <p className="text-xs font-black uppercase tracking-widest">Ningún cultivo listo para cosecha</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {cultivos.filter((c) => c.estado === "cosecha").map((c) => (
+                    <div
+                      key={c.id}
+                      className="flex items-start gap-3 p-4 rounded-2xl border-2 bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-700"
+                    >
+                      <div className="p-2 rounded-xl bg-purple-100 dark:bg-purple-800/40 flex-shrink-0">
+                        <CheckCircle2 className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-black text-gray-800 dark:text-white truncate">{c.nombre}</p>
+                        <p className="text-[9px] text-gray-500 dark:text-gray-400 truncate">📍 {c.zona}</p>
+                        <p className="text-[9px] text-gray-500 dark:text-gray-400">🌾 {c.hectareas} ha · Siembra: {c.fechaSiembra}</p>
+                        <span className="inline-block mt-1 px-2 py-0.5 rounded-lg bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-400 text-[8px] font-black uppercase">
+                          Listo para cosechar
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Panel derecho: sensores + alertas */}

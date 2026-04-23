@@ -13,7 +13,7 @@ interface WeatherData {
   wind?: { speed: number; gust?: number };
   name?: string;
 }
-interface ChartData { tiempo: string; temperatura: number }
+interface ChartData { tiempo: string; temperatura: number; humedad: number; viento: number }
 type GeoPos = { lat: number; lng: number } | null;
 
 function useRealTimeLocation(): { pos: GeoPos; geoError: string | null } {
@@ -39,12 +39,16 @@ function useRealTimeLocation(): { pos: GeoPos; geoError: string | null } {
   return { pos, geoError };
 }
 
-const CustomTooltip = ({ active, payload }: any) => {
+const CustomTooltip = ({ active, payload, metrica }: any) => {
   if (!active || !payload?.length) return null;
+  const value = payload[0].value.toFixed(1);
+  const label = metrica === "temperatura" ? "°C" : metrica === "humedad" ? "%" : "km/h";
+  const color = metrica === "temperatura" ? "#f97316" : metrica === "humedad" ? "#3b82f6" : "#06b6d4";
+  
   return (
     <div className="bg-slate-900 text-white p-3 rounded-xl shadow-2xl border border-slate-700">
       <p className="text-[10px] font-bold opacity-60 uppercase mb-1">{payload[0].payload.tiempo}</p>
-      <p className="text-sm font-black text-emerald-400">{payload[0].value.toFixed(1)}°C</p>
+      <p style={{ color }} className="text-sm font-black">{value}{label}</p>
     </div>
   );
 };
@@ -55,6 +59,7 @@ export function MonitoreoTiempoReal() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sugerencia, setSugerencia] = useState("Sincronizando sensores...");
+  const [metricaActiva, setMetricaActiva] = useState<"temperatura" | "humedad" | "viento">("temperatura");
 
   const { pos: miUbicacion, geoError } = useRealTimeLocation();
   const posRef = useRef<GeoPos>(null);
@@ -64,7 +69,15 @@ export function MonitoreoTiempoReal() {
     const ahora = new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     const tempActual = data.main?.temp ?? 0;
     const humActual  = data.main?.humidity ?? 0;
-    setDatosRealTime((prev) => [...prev, { tiempo: ahora, temperatura: tempActual }].slice(-15));
+    const vtoActual  = (data.wind?.speed ?? 0) * 3.6; // Convertir m/s a km/h
+    
+    setDatosRealTime((prev) => [...prev, { 
+      tiempo: ahora, 
+      temperatura: tempActual,
+      humedad: humActual,
+      viento: vtoActual
+    }].slice(-15));
+    
     setDatosActuales(data);
     if      (tempActual < 10) setSugerencia("Riesgo de helada detectado. Revisar cubiertas térmicas.");
     else if (humActual > 75)  setSugerencia("Humedad elevada. Monitorear posible aparición de hongos.");
@@ -84,15 +97,15 @@ export function MonitoreoTiempoReal() {
     } catch {
       setError("Modo Simulación Activo");
       procesarDatos({
-        main: { temp: 20 + Math.random() * 5, humidity: 55 + Math.random() * 10, feels_like: 22 },
-        wind: { speed: 10 + Math.random() * 5, gust: 18 },
+        main: { temp: 18 + Math.random() * 8, humidity: 50 + Math.random() * 25, feels_like: 20 },
+        wind: { speed: (3 + Math.random() * 5) / 3.6, gust: 18 }, // Convertir km/h a m/s
       });
     } finally { setLoading(false); }
   }, [procesarDatos]);
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30000);
+    const interval = setInterval(fetchData, 30000); // Actualizar cada 30 segundos
     return () => clearInterval(interval);
   }, [fetchData]);
 
@@ -143,9 +156,33 @@ export function MonitoreoTiempoReal() {
 
       {/* Métricas */}
       <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 xs:gap-4">
-        <MetricCard title="Temperatura" value={`${datosActuales?.main?.temp.toFixed(1) ?? "--"}°C`} icon={<Thermometer className="text-orange-500" />} color="border-orange-500" />
-        <MetricCard title="Humedad"     value={`${datosActuales?.main?.humidity?.toFixed(0) ?? "--"}%`} icon={<Droplets className="text-blue-500" />}   color="border-blue-500" />
-        <MetricCard title="Viento"      value={`${datosActuales?.wind?.speed.toFixed(1) ?? "--"} km/h`} icon={<Wind className="text-cyan-500" />}       color="border-cyan-500" />
+        <MetricCard 
+          title="Temperatura" 
+          value={`${datosActuales?.main?.temp.toFixed(1) ?? "--"}°C`} 
+          icon={<Thermometer className="text-orange-500" />} 
+          color="border-orange-500" 
+          metrica="temperatura"
+          activa={metricaActiva === "temperatura"}
+          onChange={() => setMetricaActiva("temperatura")}
+        />
+        <MetricCard 
+          title="Humedad" 
+          value={`${datosActuales?.main?.humidity?.toFixed(0) ?? "--"}%`} 
+          icon={<Droplets className="text-blue-500" />} 
+          color="border-blue-500" 
+          metrica="humedad"
+          activa={metricaActiva === "humedad"}
+          onChange={() => setMetricaActiva("humedad")}
+        />
+        <MetricCard
+          title="Viento"
+          value={`${datosActuales?.wind?.speed != null ? (datosActuales.wind.speed * 3.6).toFixed(1) : "--"} km/h`}
+          icon={<Wind className="text-cyan-500" />}
+          color="border-cyan-500"
+          metrica="viento"
+          activa={metricaActiva === "viento"}
+          onChange={() => setMetricaActiva("viento")}
+        />
         <div className="bg-emerald-600 p-4 xs:p-5 sm:p-6 rounded-2xl xs:rounded-3xl text-white shadow-lg shadow-emerald-100 flex flex-col justify-center col-span-1 xs:col-span-2 md:col-span-1">
           <p className="text-[8px] xs:text-[9px] font-black uppercase opacity-60 mb-2">Consejo</p>
           <p className="text-[10px] xs:text-xs font-bold leading-relaxed line-clamp-3">{sugerencia}</p>
@@ -155,10 +192,45 @@ export function MonitoreoTiempoReal() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
         {/* Gráfica */}
         <div className="md:col-span-2 bg-white dark:bg-slate-800 p-4 xs:p-6 sm:p-8 rounded-2xl xs:rounded-3xl shadow-sm border border-slate-100 dark:border-slate-700">
-          <div className="flex flex-col xs:flex-row justify-between items-start xs:items-center mb-4 xs:mb-6 gap-2">
+          <div className="flex flex-col xs:flex-row justify-between items-start xs:items-center mb-4 xs:mb-6 gap-2 flex-wrap">
             <h3 className="text-sm xs:text-base font-bold text-slate-800 dark:text-white flex items-center gap-2 min-w-0">
-              <TrendingUp className="text-emerald-500 w-4 h-4 xs:w-5 xs:h-5 flex-shrink-0" /> <span className="truncate">Variación Térmica</span>
+              <TrendingUp className="text-emerald-500 w-4 h-4 xs:w-5 xs:h-5 flex-shrink-0" /> 
+              <span className="truncate">
+                {metricaActiva === "temperatura" ? "Variación Térmica" : metricaActiva === "humedad" ? "Variación de Humedad" : "Variación de Viento"}
+              </span>
             </h3>
+            <div className="flex gap-1.5 flex-wrap">
+              <button
+                onClick={() => setMetricaActiva("temperatura")}
+                className={`px-3 py-1.5 rounded-lg text-[8px] xs:text-[9px] font-bold uppercase transition-all ${
+                  metricaActiva === "temperatura"
+                    ? "bg-orange-500 text-white"
+                    : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
+                }`}
+              >
+                Temp
+              </button>
+              <button
+                onClick={() => setMetricaActiva("humedad")}
+                className={`px-3 py-1.5 rounded-lg text-[8px] xs:text-[9px] font-bold uppercase transition-all ${
+                  metricaActiva === "humedad"
+                    ? "bg-blue-500 text-white"
+                    : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
+                }`}
+              >
+                Humedad
+              </button>
+              <button
+                onClick={() => setMetricaActiva("viento")}
+                className={`px-3 py-1.5 rounded-lg text-[8px] xs:text-[9px] font-bold uppercase transition-all ${
+                  metricaActiva === "viento"
+                    ? "bg-cyan-500 text-white"
+                    : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
+                }`}
+              >
+                Viento
+              </button>
+            </div>
             <span className="text-[8px] xs:text-[9px] font-bold text-slate-400 bg-slate-50 dark:bg-slate-700 px-2 xs:px-3 py-1 rounded-full uppercase tracking-tighter flex-shrink-0">
               Últimos 15 registros
             </span>
@@ -168,16 +240,35 @@ export function MonitoreoTiempoReal() {
               <AreaChart data={datosRealTime} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorTemp" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#10b981" stopOpacity={0.6}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.05}/>
+                    <stop offset="5%"  stopColor="#f97316" stopOpacity={0.6}/>
+                    <stop offset="95%" stopColor="#f97316" stopOpacity={0.05}/>
+                  </linearGradient>
+                  <linearGradient id="colorHum" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="#3b82f6" stopOpacity={0.6}/>
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.05}/>
+                  </linearGradient>
+                  <linearGradient id="colorVto" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="#06b6d4" stopOpacity={0.6}/>
+                    <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.05}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="tiempo" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: "#94a3b8", fontWeight: 600 }} interval="preserveStartEnd" />
                 <YAxis hide domain={["auto","auto"]} />
-                <Tooltip content={<CustomTooltip />} cursor={{ stroke: "#10b981", strokeWidth: 1, strokeDasharray: "5 5" }} />
-                <Area type="monotone" dataKey="temperatura" stroke="#10b981" strokeWidth={3} fill="url(#colorTemp)"
-                  activeDot={{ r: 6, stroke: "#fff", strokeWidth: 3, fill: "#10b981" }} animationDuration={1200} />
+                <Tooltip content={<CustomTooltip metrica={metricaActiva} />} cursor={{ stroke: "#10b981", strokeWidth: 1, strokeDasharray: "5 5" }} />
+                
+                {metricaActiva === "temperatura" && (
+                  <Area type="monotone" dataKey="temperatura" stroke="#f97316" strokeWidth={3} fill="url(#colorTemp)"
+                    activeDot={{ r: 6, stroke: "#fff", strokeWidth: 3, fill: "#f97316" }} animationDuration={400} />
+                )}
+                {metricaActiva === "humedad" && (
+                  <Area type="monotone" dataKey="humedad" stroke="#3b82f6" strokeWidth={3} fill="url(#colorHum)"
+                    activeDot={{ r: 6, stroke: "#fff", strokeWidth: 3, fill: "#3b82f6" }} animationDuration={400} />
+                )}
+                {metricaActiva === "viento" && (
+                  <Area type="monotone" dataKey="viento" stroke="#06b6d4" strokeWidth={3} fill="url(#colorVto)"
+                    activeDot={{ r: 6, stroke: "#fff", strokeWidth: 3, fill: "#06b6d4" }} animationDuration={400} />
+                )}
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -197,16 +288,24 @@ export function MonitoreoTiempoReal() {
   );
 }
 
-function MetricCard({ title, value, icon, color }: any) {
+function MetricCard({ title, value, icon, color, activa, onChange }: any) {
   return (
-    <div className={`bg-white dark:bg-slate-800 p-3 xs:p-4 sm:p-5 rounded-xl xs:rounded-2xl shadow-sm border-b-4 ${color} transition-all hover:-translate-y-1 sm:hover:-translate-y-2 hover:shadow-md cursor-pointer`}>
+    <button
+      onClick={onChange}
+      className={`w-full text-left bg-white dark:bg-slate-800 p-3 xs:p-4 sm:p-5 rounded-xl xs:rounded-2xl shadow-sm border-b-4 ${color} transition-all hover:-translate-y-1 sm:hover:-translate-y-2 hover:shadow-md cursor-pointer focus:outline-none ${
+        activa ? "ring-2 ring-offset-2 ring-emerald-400 shadow-lg -translate-y-1" : ""
+      }`}
+    >
       <div className="flex justify-between items-start mb-3 xs:mb-4">
-        <div className="p-2 bg-slate-50 dark:bg-slate-700 rounded-lg flex-shrink-0">{icon}</div>
+        <div className={`p-2 rounded-lg flex-shrink-0 ${activa ? "bg-emerald-50 dark:bg-emerald-900/30" : "bg-slate-50 dark:bg-slate-700"}`}>{icon}</div>
         <span className="text-[7px] xs:text-[8px] font-black text-emerald-500 bg-emerald-50 px-1.5 xs:px-2 py-0.5 xs:py-1 rounded flex-shrink-0">LIVE</span>
       </div>
       <p className="text-[8px] xs:text-[9px] font-black text-slate-400 uppercase tracking-widest truncate">{title}</p>
-      <p className="text-lg xs:text-xl sm:text-2xl font-black text-slate-800 dark:text-white truncate">{value}</p>
-    </div>
+      <p className={`text-lg xs:text-xl sm:text-2xl font-black truncate ${activa ? "text-emerald-600 dark:text-emerald-400" : "text-slate-800 dark:text-white"}`}>{value}</p>
+      {activa && (
+        <p className="text-[7px] font-black text-emerald-400 uppercase tracking-widest mt-1">▲ Mostrando en gráfica</p>
+      )}
+    </button>
   );
 }
 
