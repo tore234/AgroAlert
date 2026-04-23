@@ -6,6 +6,7 @@ import L from "leaflet";
 import {
   MapPin, Thermometer, Droplets, Wind, AlertTriangle,
   Layers, TreePine, RefreshCw, Navigation, Satellite, Map, LocateFixed, Zap,
+  Power, Eye, EyeOff,
 } from "lucide-react";
 import {
   getCultivosGlobal, getAlertasHistorialGlobal, getRelesGlobal, Cultivo, AlertaHistorial, Rele,
@@ -14,7 +15,7 @@ import {
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const OWM_KEY  = import.meta.env.VITE_OWM_API_KEY ?? "";
-const CENTRO: [number, number] = [20.45, -100.3];
+const CENTRO: [number, number] = [19.8103, -100.6142]; // Maravatio, Michoacán
 
 const ZONA_COLORES: Record<string, string> = {
   Norte:  "#ef4444",
@@ -84,14 +85,16 @@ function cultivoIcon(color: string) {
   return L.divIcon({
     className: "",
     html: `<div style="
-      width:28px;height:28px;border-radius:50%;
+      width:30px;height:30px;border-radius:50%;
       background:${color};border:3px solid white;
-      box-shadow:0 2px 8px rgba(0,0,0,0.35);
+      box-shadow:0 2px 10px rgba(0,0,0,0.3);
       display:flex;align-items:center;justify-content:center;
-    "></div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-    popupAnchor: [0, -16],
+    ">
+      <div style="width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,0.45);"></div>
+    </div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+    popupAnchor: [0, -18],
   });
 }
 
@@ -116,33 +119,48 @@ function ubicacionIcon() {
 function alertaIcon() {
   return L.divIcon({
     className: "",
-    html: `<div style="
-      width:0;height:0;
-      border-left:12px solid transparent;
-      border-right:12px solid transparent;
-      border-bottom:22px solid #ef4444;
-      filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));
-    "></div>`,
-    iconSize: [24, 22],
-    iconAnchor: [12, 22],
-    popupAnchor: [0, -24],
+    html: `<div style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24">
+        <polygon points="12,2 22,21 2,21" fill="#ef4444" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+        <text x="12" y="18" text-anchor="middle" font-size="10" font-weight="900" fill="white">!</text>
+      </svg>
+    </div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 24],
+    popupAnchor: [0, -26],
   });
 }
 
-function releIcon(estado: string) {
-  const color = estado === "encendido" ? "#22c55e" : "#94a3b8";
+function releIcon(estado: string, modo?: string) {
+  const encendido = estado === "encendido";
+  const automatico = modo === "automatico";
+
+  const bg     = encendido ? (automatico ? "#0ea5e9" : "#22c55e") : "#94a3b8";
+  const glow   = encendido
+    ? (automatico
+        ? "0 0 0 3px rgba(14,165,233,0.35), 0 3px 10px rgba(0,0,0,0.3)"
+        : "0 0 0 3px rgba(34,197,94,0.35), 0 3px 10px rgba(0,0,0,0.3)")
+    : "0 2px 8px rgba(0,0,0,0.2)";
+
+  const boltSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="white">
+    <polygon points="13,2 3,14 12,14 11,22 21,10 12,10"/>
+  </svg>`;
+  const autoDot = automatico && encendido
+    ? `<div style="position:absolute;top:-5px;right:-5px;width:11px;height:11px;border-radius:50%;background:#f59e0b;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3);"></div>`
+    : "";
+
   return L.divIcon({
     className: "",
     html: `<div style="
-      width:32px;height:32px;border-radius:4px;
-      background:${color};border:3px solid white;
-      box-shadow:0 2px 8px rgba(0,0,0,0.35);
+      position:relative;
+      width:34px;height:34px;border-radius:9px;
+      background:${bg};border:2.5px solid white;
+      box-shadow:${glow};
       display:flex;align-items:center;justify-content:center;
-      font-size:18px;
-    ">⚡</div>`,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-    popupAnchor: [0, -20],
+    ">${boltSvg}${autoDot}</div>`,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+    popupAnchor: [0, -22],
   });
 }
 
@@ -194,7 +212,9 @@ export function MapasVisualizacion() {
   const [cargando,  setCargando]  = useState(true);
   const [tileKey,   setTileKey]   = useState<TileKey>("calles");
   const [capaClima, setCapaClima] = useState<CapaKey>("ninguna");
-  const [zonaFiltro, setZonaFiltro] = useState("Todas");
+  const [zonaFiltro,       setZonaFiltro]       = useState("Todas");
+  const [mostrarReles,     setMostrarReles]     = useState(true);
+  const [filtroEstadoRele, setFiltroEstadoRele] = useState<"todos" | "encendido" | "apagado">("todos");
   const [flyTarget, setFlyTarget] = useState<{ lat: number; lng: number; zoom: number } | null>(null);
 
   const { pos: miUbicacion, geoError } = useRealTimeLocation();
@@ -222,6 +242,18 @@ export function MapasVisualizacion() {
   const alertasFiltradas = zonaFiltro === "Todas"
     ? alertas
     : alertas.filter((a) => cultivos.find((c) => c.nombre === a.nombre_cultivo && c.zona === zonaFiltro));
+
+  const relesFiltrados = reles.filter((r) => {
+    const zonaOk  = zonaFiltro === "Todas" || r.zona === zonaFiltro;
+    const estadoOk = filtroEstadoRele === "todos" || r.estado === filtroEstadoRele;
+    return zonaOk && estadoOk;
+  });
+
+  const irARele = (r: Rele) => {
+    const cultivo = cultivos.find((c) => c.nombre === r.cultivo_asociado);
+    const coords  = r.coordenadas || (cultivo ? cultivo.coordenadas : null);
+    if (coords) setFlyTarget({ lat: coords.lat, lng: coords.lng, zoom: 16 });
+  };
 
   const statsZona = (zona: string) => {
     const cs = cultivos.filter((c) => c.zona === zona);
@@ -362,6 +394,40 @@ export function MapasVisualizacion() {
                 })}
               </div>
             )}
+
+            {/* Relay filter */}
+            <div className="flex items-center gap-1.5 flex-shrink-0 border-l border-gray-200 dark:border-slate-600 pl-3">
+              <Zap className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+              <button
+                onClick={() => setMostrarReles((v) => !v)}
+                title={mostrarReles ? "Ocultar relés" : "Mostrar relés"}
+                className={`p-1.5 rounded-lg border text-xs transition-all ${
+                  mostrarReles
+                    ? "bg-sky-500 text-white border-sky-500"
+                    : "bg-gray-50 dark:bg-slate-700 text-gray-400 border-gray-200 dark:border-slate-600"
+                }`}
+              >
+                {mostrarReles ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+              </button>
+              {(["todos", "encendido", "apagado"] as const).map((op) => (
+                <button
+                  key={op}
+                  onClick={() => { setFiltroEstadoRele(op); setMostrarReles(true); }}
+                  className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all ${
+                    filtroEstadoRele === op && mostrarReles
+                      ? op === "encendido" ? "bg-green-500 text-white border-green-500"
+                        : op === "apagado" ? "bg-slate-500 text-white border-slate-500"
+                        : "bg-sky-500 text-white border-sky-500"
+                      : "bg-gray-50 dark:bg-slate-700 text-gray-500 dark:text-gray-300 border-gray-200 dark:border-slate-600 hover:border-sky-300"
+                  }`}
+                >
+                  <span className="hidden sm:inline">
+                    {op === "todos" ? "Todos" : op === "encendido" ? "ON" : "OFF"}
+                  </span>
+                  <Power className="w-3 h-3 sm:hidden" />
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Leaflet Map */}
@@ -491,39 +557,50 @@ export function MapasVisualizacion() {
                 })}
 
                 {/* Relay markers */}
-                {reles.map((r) => {
+                {mostrarReles && relesFiltrados.map((r) => {
                   const cultivo = cultivos.find((c) => c.nombre === r.cultivo_asociado);
-                  const coords = r.coordenadas || (cultivo ? cultivo.coordenadas : null);
+                  const coords  = r.coordenadas || (cultivo ? cultivo.coordenadas : null);
                   if (!coords) return null;
-                  
                   return (
                     <Marker
                       key={`rele-${r.id}`}
                       position={[coords.lat, coords.lng]}
-                      icon={releIcon(r.estado)}
+                      icon={releIcon(r.estado, r.modo)}
                     >
-                      <Popup maxWidth={200}>
+                      <Popup maxWidth={210}>
                         <div className="p-1.5 space-y-1.5">
                           <div className="flex items-center gap-2">
-                            <span className="text-xl">⚡</span>
+                            <div style={{
+                              width: 24, height: 24, borderRadius: 6, flexShrink: 0,
+                              background: r.estado === "encendido" ? (r.modo === "automatico" ? "#0ea5e9" : "#22c55e") : "#94a3b8",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                            }}>
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="white">
+                                <polygon points="13,2 3,14 12,14 11,22 21,10 12,10"/>
+                              </svg>
+                            </div>
                             <p className="font-black text-gray-900 text-sm">{r.nombre}</p>
                           </div>
                           {r.cultivo_asociado !== "Ninguno" && (
                             <p className="text-xs text-gray-600">🌱 {r.cultivo_asociado}</p>
                           )}
                           <p className="text-xs text-gray-600">📍 Zona {r.zona}</p>
-                          <span className={`inline-block text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
-                            r.estado === "encendido"
-                              ? "bg-green-100 text-green-700"
-                              : "bg-gray-100 text-gray-700"
-                          }`}>
-                            {r.estado}
-                          </span>
-                          {r.modo && (
-                            <p className="text-[10px] text-gray-500">Modo: {r.modo}</p>
-                          )}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`inline-block text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                              r.estado === "encendido" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
+                            }`}>
+                              {r.estado === "encendido" ? "ON" : "OFF"}
+                            </span>
+                            {r.modo && (
+                              <span className={`inline-block text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                r.modo === "automatico" ? "bg-sky-100 text-sky-700" : "bg-purple-100 text-purple-700"
+                              }`}>
+                                {r.modo === "automatico" ? "Auto" : "Manual"}
+                              </span>
+                            )}
+                          </div>
                           {r.descripcion && (
-                            <p className="text-[10px] text-gray-600 italic">{r.descripcion}</p>
+                            <p className="text-[10px] text-gray-500 italic">{r.descripcion}</p>
                           )}
                         </div>
                       </Popup>
@@ -535,21 +612,38 @@ export function MapasVisualizacion() {
           </div>
 
           {/* Legend */}
-          <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-gray-100 dark:border-slate-700 flex flex-wrap gap-4 items-center">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-gray-100 dark:border-slate-700 flex flex-wrap gap-x-4 gap-y-2 items-center">
             <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Leyenda:</p>
             {Object.entries(ESTADO_COLORES).map(([estado, color]) => (
               <div key={estado} className="flex items-center gap-1.5">
-                <div style={{ background: color, width: 10, height: 10, borderRadius: "50%", border: "2px solid white", boxShadow: "0 0 0 1px #cbd5e1" }} />
+                <div style={{ background: color, width: 12, height: 12, borderRadius: "50%", border: "2px solid white", boxShadow: "0 0 0 1px #cbd5e1" }} />
                 <span className="text-xs font-bold text-gray-600 dark:text-gray-300 capitalize">{estado.replace("_", " ")}</span>
               </div>
             ))}
             <div className="flex items-center gap-1.5">
-              <div style={{ width: 0, height: 0, borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderBottom: "12px solid #ef4444" }} />
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24">
+                <polygon points="12,2 22,21 2,21" fill="#ef4444" stroke="white" strokeWidth="1" strokeLinejoin="round"/>
+              </svg>
               <span className="text-xs font-bold text-gray-600 dark:text-gray-300">Alerta</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <div style={{ width: 24, height: 24, borderRadius: "3px", background: "#22c55e", border: "2px solid white", boxShadow: "0 0 0 1px #cbd5e1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px" }}>⚡</div>
-              <span className="text-xs font-bold text-gray-600 dark:text-gray-300">Relé Activo</span>
+              <div style={{ width: 22, height: 22, borderRadius: 6, background: "#22c55e", border: "2px solid white", boxShadow: "0 0 0 2px rgba(34,197,94,0.3)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="white"><polygon points="13,2 3,14 12,14 11,22 21,10 12,10"/></svg>
+              </div>
+              <span className="text-xs font-bold text-gray-600 dark:text-gray-300">Relé ON</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div style={{ width: 22, height: 22, borderRadius: 6, background: "#0ea5e9", border: "2px solid white", boxShadow: "0 0 0 2px rgba(14,165,233,0.3)", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="white"><polygon points="13,2 3,14 12,14 11,22 21,10 12,10"/></svg>
+                <div style={{ position: "absolute", top: -4, right: -4, width: 8, height: 8, borderRadius: "50%", background: "#f59e0b", border: "1.5px solid white" }} />
+              </div>
+              <span className="text-xs font-bold text-gray-600 dark:text-gray-300">Relé Auto</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div style={{ width: 22, height: 22, borderRadius: 6, background: "#94a3b8", border: "2px solid white", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="white"><polygon points="13,2 3,14 12,14 11,22 21,10 12,10"/></svg>
+              </div>
+              <span className="text-xs font-bold text-gray-600 dark:text-gray-300">Relé OFF</span>
             </div>
           </div>
         </div>
@@ -622,6 +716,54 @@ export function MapasVisualizacion() {
                       <p className="text-[10px] text-gray-400">{c.zona} · {c.hectareas} ha</p>
                     </div>
                     <MapPin className="w-3.5 h-3.5 text-gray-300 group-hover:text-emerald-500 flex-shrink-0 transition-colors" />
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Relay list */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-gray-100 dark:border-slate-700">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest">
+                Relés{zonaFiltro !== "Todas" ? ` · ${zonaFiltro}` : ""}
+              </h3>
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-black bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">
+                  {relesFiltrados.filter((r) => r.estado === "encendido").length} ON
+                </span>
+                <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">
+                  {relesFiltrados.filter((r) => r.estado === "apagado").length} OFF
+                </span>
+              </div>
+            </div>
+            <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+              {relesFiltrados.length === 0 ? (
+                <p className="text-xs text-gray-400 italic text-center py-4">Sin relés</p>
+              ) : (
+                relesFiltrados.map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => irARele(r)}
+                    className="w-full flex items-center gap-2.5 p-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-left group"
+                  >
+                    <div style={{
+                      width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                      background: r.estado === "encendido" ? (r.modo === "automatico" ? "#0ea5e9" : "#22c55e") : "#94a3b8",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      boxShadow: r.estado === "encendido" ? "0 0 0 2px rgba(34,197,94,0.25)" : "none",
+                    }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="white">
+                        <polygon points="13,2 3,14 12,14 11,22 21,10 12,10"/>
+                      </svg>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-gray-800 dark:text-white truncate">{r.nombre}</p>
+                      <p className="text-[10px] text-gray-400 truncate">
+                        {r.zona}{r.cultivo_asociado !== "Ninguno" ? ` · ${r.cultivo_asociado}` : ""}
+                      </p>
+                    </div>
+                    <Navigation className="w-3.5 h-3.5 text-gray-300 group-hover:text-sky-500 flex-shrink-0 transition-colors" />
                   </button>
                 ))
               )}

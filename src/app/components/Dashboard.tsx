@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import {
   Sprout, Layers, MapPin, CheckCircle2, TrendingUp,
   LayoutDashboard, Thermometer, Wind, Droplets, X,
-  AlertTriangle, RefreshCw, ToggleLeft, ToggleRight, User,
+  AlertTriangle, RefreshCw, ToggleLeft, ToggleRight, User, Zap,
 } from "lucide-react";
 
 const ROL_COLOR: Record<string, string> = {
@@ -18,8 +18,8 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useCurrentUser } from "../../hooks/useCurrentUser";
 import {
-  getCultivosGlobal, getAlertasHistorialGlobal, getNodosGlobal, saveNodosGlobal,
-  Cultivo, AlertaHistorial, NodoSensor,
+  getCultivosGlobal, getAlertasHistorialGlobal, getNodosGlobal, saveNodosGlobal, getRelesGlobal,
+  Cultivo, AlertaHistorial, NodoSensor, Rele,
 } from "../../services/firestoreService";
 
 const API_KEY  = import.meta.env.VITE_OWM_API_KEY;
@@ -74,6 +74,7 @@ export function DashboardPrincipal() {
 
   const [cultivos,  setCultivos]  = useState<Cultivo[]>([]);
   const [alertas,   setAlertas]   = useState<AlertaHistorial[]>([]);
+  const [reles,     setReles]     = useState<Rele[]>([]);
   const [sensores,  setSensores]  = useState<NodoSensor[]>([
     { nombre: "Temperatura", estado: "ACTIVO"  },
     { nombre: "Humedad",     estado: "ACTIVO"  },
@@ -90,13 +91,15 @@ export function DashboardPrincipal() {
   const cargarDatos = useCallback(async () => {
     setCargando(true);
     try {
-      const [c, a, n] = await Promise.all([
+      const [c, a, n, r] = await Promise.all([
         getCultivosGlobal(),
         getAlertasHistorialGlobal(),
         getNodosGlobal(),
+        getRelesGlobal(),
       ]);
       setCultivos(c);
       setAlertas(a);
+      setReles(r);
       if (n.length > 0) setSensores(n);
     } finally {
       setCargando(false);
@@ -149,6 +152,7 @@ export function DashboardPrincipal() {
   const totalHa         = cultivos.reduce((s, c) => s + c.hectareas, 0);
   const totalZonas      = new Set(cultivos.map((c) => c.zona)).size;
   const listosParaCosecha = cultivos.filter((c) => c.estado === "cosecha").length;
+  const relesActivos    = reles.filter((r) => r.estado === "encendido").length;
   const alertasRecientes  = alertas.slice(0, 5);
 
   // ── Sensor toggle + save ──────────────────────────────────────────────────
@@ -206,6 +210,15 @@ export function DashboardPrincipal() {
       border: "border-orange-500",
       bg: "bg-orange-50/50",
       text: "text-orange-600",
+    },
+    {
+      id: "reles",
+      label: "RELÉS ACTIVOS",
+      value: cargando ? "—" : String(relesActivos),
+      icon: Zap,
+      border: "border-yellow-500",
+      bg: "bg-yellow-50/50",
+      text: "text-yellow-600",
     },
     {
       id: "cosecha",
@@ -275,7 +288,7 @@ export function DashboardPrincipal() {
       </div>
 
       {/* Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 xs:gap-3 sm:gap-4 lg:gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 xs:gap-3 sm:gap-4 lg:gap-6">
         {cards.map((card) => {
           const IconComponent = card.icon;
           const isActive = metricaActiva === card.id;
@@ -392,6 +405,37 @@ export function DashboardPrincipal() {
                       <p className="text-[9px] text-gray-400 truncate">{a.nombre_cultivo} · {a.zona}</p>
                       <p className="text-[8px] text-gray-300 dark:text-gray-500">{a.fecha_deteccion?.slice(0, 10)}</p>
                     </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Relés */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl xs:rounded-3xl p-4 xs:p-5 border border-gray-100 dark:border-slate-700 shadow-sm">
+            <h3 className="text-[9px] xs:text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+              <Zap className="w-3 h-3 text-yellow-500" />
+              Relés Activos
+            </h3>
+            {cargando ? (
+              <div className="flex justify-center py-4">
+                <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : reles.length === 0 ? (
+              <p className="text-xs text-gray-400 italic text-center py-3">Sin relés registrados</p>
+            ) : (
+              <div className="space-y-2">
+                {reles.filter((r) => r.estado === "encendido").map((r) => (
+                  <div key={r.id} className="flex items-center justify-between p-2.5 rounded-xl bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-100 dark:border-yellow-800/30">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black text-gray-800 dark:text-white truncate">{r.nombre}</p>
+                      {r.cultivo_asociado !== "Ninguno" && (
+                        <p className="text-[9px] text-gray-500 dark:text-gray-400 truncate">🌱 {r.cultivo_asociado}</p>
+                      )}
+                    </div>
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-[8px] font-black uppercase flex-shrink-0">
+                      ⚡ ON
+                    </span>
                   </div>
                 ))}
               </div>

@@ -24,25 +24,30 @@ const ROL_COLOR: Record<string, string> = {
 
 // ── Mini Map for selecting relay location ─────────────────────────────────
 
-function MapaSelectorUbicacion({ 
-  coordenadas, 
-  onChange 
-}: { 
-  coordenadas: { lat: number; lng: number }; 
+interface MapaSelectorProps {
+  coordenadas: { lat: number; lng: number };
   onChange: (coords: { lat: number; lng: number }) => void;
-}) {
-  const MapClick = () => {
-    useMapEvents({
+}
+
+function MapaSelectorUbicacion({ coordenadas, onChange }: MapaSelectorProps) {
+  const MapController = () => {
+    const map = useMapEvents({
       click(e) {
         onChange({ lat: e.latlng.lat, lng: e.latlng.lng });
       },
     });
+
+    useEffect(() => {
+      map.flyTo([coordenadas.lat, coordenadas.lng], 13, { duration: 1 });
+    }, [coordenadas, map]);
+
     return null;
   };
 
   return (
     <div className="w-full rounded-xl overflow-hidden border border-gray-200 dark:border-slate-600 h-64 shadow-md">
       <MapContainer
+        key={`${coordenadas.lat}-${coordenadas.lng}`}
         center={[coordenadas.lat, coordenadas.lng]}
         zoom={13}
         style={{ width: "100%", height: "100%" }}
@@ -52,7 +57,7 @@ function MapaSelectorUbicacion({
           attribution="© OpenStreetMap"
         />
         <Marker position={[coordenadas.lat, coordenadas.lng]} />
-        <MapClick />
+        <MapController />
       </MapContainer>
     </div>
   );
@@ -79,7 +84,7 @@ export function GestionReles() {
     modo: "manual" as Rele["modo"],
     cultivo_asociado: "Ninguno",
     descripcion: "",
-    coordenadas: { lat: 20.45, lng: -100.3 },
+    coordenadas: { lat: 19.8103, lng: -100.6142 }, // Maravatio, Michoacán
   });
 
   const cargarDatos = async () => {
@@ -97,8 +102,21 @@ export function GestionReles() {
 
   useEffect(() => { cargarDatos(); }, []);
 
+  // ── Sync cultivo coordinates with map ─────────────────────────────────
+  useEffect(() => {
+    if (formulario.cultivo_asociado !== "Ninguno") {
+      const cultivo = cultivos.find((c) => c.nombre === formulario.cultivo_asociado);
+      if (cultivo) {
+        setFormulario((prev) => ({
+          ...prev,
+          coordenadas: cultivo.coordenadas,
+        }));
+      }
+    }
+  }, [formulario.cultivo_asociado, cultivos]);
+
   const limpiarFormulario = () => {
-    setFormulario({ nombre: "", zona: "", estado: "apagado", modo: "manual", cultivo_asociado: "Ninguno", descripcion: "", coordenadas: { lat: 20.45, lng: -100.3 } });
+    setFormulario({ nombre: "", zona: "", estado: "apagado", modo: "manual", cultivo_asociado: "Ninguno", descripcion: "", coordenadas: { lat: 19.8103, lng: -100.6142 } });
     setReleEditando(null);
     setMostrarFormulario(false);
   };
@@ -505,7 +523,7 @@ export function GestionReles() {
                                   estado: rele.estado, modo: rele.modo,
                                   cultivo_asociado: rele.cultivo_asociado,
                                   descripcion: rele.descripcion,
-                                  coordenadas: rele.coordenadas || { lat: 20.45, lng: -100.3 },
+                                  coordenadas: rele.coordenadas || { lat: 19.8103, lng: -100.6142 },
                                 });
                                 setReleEditando(rele.id);
                                 setMostrarFormulario(true);
